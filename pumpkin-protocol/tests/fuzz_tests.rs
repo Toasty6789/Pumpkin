@@ -18,22 +18,23 @@ use std::io::Cursor;
 
 use pumpkin_protocol::{
     ServerPacket,
-    codec::var_int::VarInt,
+    codec::{lp_vector_3d::LpVector3d, var_int::VarInt},
     java::server::{config, handshake::SHandShake, login, play, status},
-    ser::{NetworkReadExt, NetworkWriteExt},
+    ser::NetworkWriteExt,
 };
 use pumpkin_util::{
+    GameMode,
     math::{position::BlockPos, vector3::Vector3},
     version::JavaMinecraftVersion,
 };
 
 /// The Minecraft version used for all test serialisation.
-const V: JavaMinecraftVersion = JavaMinecraftVersion::V_1_21_4;
+const V: JavaMinecraftVersion = JavaMinecraftVersion::V_26_2;
 
 // ---------------------------------------------------------------------------
 // Helper: write known bytes to a Vec, then read them back as the given type.
 // ---------------------------------------------------------------------------
-fn write_then_read_server<P, F>(version: &JavaMinecraftVersion, writer: F) -> P
+fn write_then_read_server<P, F>(version: JavaMinecraftVersion, writer: F) -> P
 where
     P: ServerPacket,
     F: FnOnce(&mut Vec<u8>),
@@ -41,7 +42,7 @@ where
     let mut buf = Vec::new();
     writer(&mut buf);
     let mut cursor = Cursor::new(&buf);
-    P::read(&mut cursor, version).expect("ServerPacket::read failed")
+    P::read(&mut cursor, &version).expect("ServerPacket::read failed")
 }
 
 // =========================================================================
@@ -50,7 +51,7 @@ where
 
 #[test]
 fn handshake_roundtrip() {
-    let packet: SHandShake = write_then_read_server(&V, |buf| {
+    let packet: SHandShake = write_then_read_server(V, |buf| {
         buf.write_var_int(&VarInt(767)).unwrap(); // protocol_version
         buf.write_string("localhost").unwrap(); // server_address
         buf.write_u16_be(25565).unwrap(); // server_port
@@ -62,7 +63,7 @@ fn handshake_roundtrip() {
     assert_eq!(packet.next_state, pumpkin_protocol::ConnectionState::Login);
 }
 
-/// Also test that the bidirectional (ClientPacket + ServerPacket) path works.
+/// Also test that the bidirectional (`ClientPacket` + `ServerPacket`) path works.
 #[test]
 fn handshake_bidirectional() {
     use pumpkin_protocol::ClientPacket;
@@ -87,14 +88,14 @@ fn handshake_bidirectional() {
 
 #[test]
 fn status_request_decode() {
-    let _packet: status::SStatusRequest = write_then_read_server(&V, |_buf| {
+    let _packet: status::SStatusRequest = write_then_read_server(V, |_buf| {
         // SStatusRequest has no fields — empty payload
     });
 }
 
 #[test]
 fn status_ping_request_roundtrip() {
-    let packet: status::SStatusPingRequest = write_then_read_server(&V, |buf| {
+    let packet: status::SStatusPingRequest = write_then_read_server(V, |buf| {
         buf.write_i64_be(42).unwrap();
     });
     assert_eq!(packet.payload, 42);
@@ -107,7 +108,7 @@ fn status_ping_request_roundtrip() {
 #[test]
 fn login_start_roundtrip() {
     let uuid = uuid::Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
-    let packet: login::SLoginStart = write_then_read_server(&V, |buf| {
+    let packet: login::SLoginStart = write_then_read_server(V, |buf| {
         buf.write_string("Player1").unwrap();
         buf.write_uuid(&uuid).unwrap();
     });
@@ -117,7 +118,7 @@ fn login_start_roundtrip() {
 
 #[test]
 fn encryption_response_roundtrip() {
-    let packet: login::SEncryptionResponse = write_then_read_server(&V, |buf| {
+    let packet: login::SEncryptionResponse = write_then_read_server(V, |buf| {
         let secret: &[u8] = &[0xAB; 128];
         buf.write_var_int(&VarInt(secret.len() as i32)).unwrap();
         buf.write_slice(secret).unwrap();
@@ -131,7 +132,7 @@ fn encryption_response_roundtrip() {
 
 #[test]
 fn login_plugin_response_roundtrip() {
-    let packet: login::SLoginPluginResponse = write_then_read_server(&V, |buf| {
+    let packet: login::SLoginPluginResponse = write_then_read_server(V, |buf| {
         buf.write_var_int(&VarInt(1)).unwrap();
         buf.write_bool(true).unwrap();
         let payload: &[u8] = &[0x01, 0x02, 0x03];
@@ -147,7 +148,7 @@ fn login_plugin_response_roundtrip() {
 
 #[test]
 fn config_client_information_roundtrip() {
-    let packet: config::SClientInformationConfig = write_then_read_server(&V, |buf| {
+    let packet: config::SClientInformationConfig = write_then_read_server(V, |buf| {
         buf.write_string("en_US").unwrap();
         buf.write_i8(12).unwrap();
         buf.write_var_int(&VarInt(0)).unwrap(); // chat_mode
@@ -166,7 +167,7 @@ fn config_client_information_roundtrip() {
 
 #[test]
 fn config_plugin_message_roundtrip() {
-    let packet: config::SPluginMessage = write_then_read_server(&V, |buf| {
+    let packet: config::SPluginMessage = write_then_read_server(V, |buf| {
         buf.write_string("minecraft:brand").unwrap();
         let data: &[u8] = &[0x00, 0x05, b'P', b'u', b'm', b'p', b'k', b'i', b'n'];
         buf.write_slice(data).unwrap();
@@ -180,7 +181,7 @@ fn config_plugin_message_roundtrip() {
 
 #[test]
 fn config_known_packs_roundtrip() {
-    let packet: config::SKnownPacks = write_then_read_server(&V, |buf| {
+    let packet: config::SKnownPacks = write_then_read_server(V, |buf| {
         buf.write_var_int(&VarInt(0)).unwrap();
     });
     assert_eq!(packet.known_pack_count, VarInt(0));
@@ -189,7 +190,7 @@ fn config_known_packs_roundtrip() {
 #[test]
 fn config_resource_pack_roundtrip() {
     let uuid = uuid::Uuid::nil();
-    let packet: config::SConfigResourcePack = write_then_read_server(&V, |buf| {
+    let packet: config::SConfigResourcePack = write_then_read_server(V, |buf| {
         buf.write_uuid(&uuid).unwrap();
         buf.write_var_int(&VarInt(3)).unwrap(); // Accepted
     });
@@ -199,7 +200,7 @@ fn config_resource_pack_roundtrip() {
 
 #[test]
 fn config_keep_alive_roundtrip() {
-    let packet: config::SKeepAlive = write_then_read_server(&V, |buf| {
+    let packet: config::SKeepAlive = write_then_read_server(V, |buf| {
         buf.write_i64_be(123456).unwrap();
     });
     assert_eq!(packet.keep_alive_id, 123456);
@@ -211,7 +212,7 @@ fn config_keep_alive_roundtrip() {
 
 #[test]
 fn play_keep_alive_roundtrip() {
-    let packet: play::SKeepAlive = write_then_read_server(&V, |buf| {
+    let packet: play::SKeepAlive = write_then_read_server(V, |buf| {
         buf.write_i64_be(999).unwrap();
     });
     assert_eq!(packet.keep_alive_id, 999);
@@ -219,7 +220,7 @@ fn play_keep_alive_roundtrip() {
 
 #[test]
 fn play_confirm_teleport_roundtrip() {
-    let packet: play::SConfirmTeleport = write_then_read_server(&V, |buf| {
+    let packet: play::SConfirmTeleport = write_then_read_server(V, |buf| {
         buf.write_var_int(&VarInt(42)).unwrap();
     });
     assert_eq!(packet.teleport_id, VarInt(42));
@@ -227,7 +228,7 @@ fn play_confirm_teleport_roundtrip() {
 
 #[test]
 fn play_chat_command_roundtrip() {
-    let packet: play::SChatCommand = write_then_read_server(&V, |buf| {
+    let packet: play::SChatCommand = write_then_read_server(V, |buf| {
         buf.write_string("/help").unwrap();
     });
     assert_eq!(packet.command, "/help");
@@ -235,7 +236,7 @@ fn play_chat_command_roundtrip() {
 
 #[test]
 fn play_client_information_roundtrip() {
-    let packet: play::SClientInformationPlay = write_then_read_server(&V, |buf| {
+    let packet: play::SClientInformationPlay = write_then_read_server(V, |buf| {
         buf.write_string("en_US").unwrap();
         buf.write_i8(12).unwrap();
         buf.write_var_int(&VarInt(0)).unwrap();
@@ -253,7 +254,7 @@ fn play_client_information_roundtrip() {
 
 #[test]
 fn play_player_position_roundtrip() {
-    let packet: play::SPlayerPosition = write_then_read_server(&V, |buf| {
+    let packet: play::SPlayerPosition = write_then_read_server(V, |buf| {
         buf.write_f64_be(10.5).unwrap();
         buf.write_f64_be(64.0).unwrap();
         buf.write_f64_be(-20.3).unwrap();
@@ -267,7 +268,7 @@ fn play_player_position_roundtrip() {
 
 #[test]
 fn play_player_rotation_roundtrip() {
-    let packet: play::SPlayerRotation = write_then_read_server(&V, |buf| {
+    let packet: play::SPlayerRotation = write_then_read_server(V, |buf| {
         buf.write_f32_be(90.0).unwrap();
         buf.write_f32_be(45.0).unwrap();
         buf.write_u8(0).unwrap();
@@ -279,7 +280,7 @@ fn play_player_rotation_roundtrip() {
 
 #[test]
 fn play_player_position_rotation_roundtrip() {
-    let packet: play::SPlayerPositionRotation = write_then_read_server(&V, |buf| {
+    let packet: play::SPlayerPositionRotation = write_then_read_server(V, |buf| {
         buf.write_f64_be(0.0).unwrap();
         buf.write_f64_be(64.0).unwrap();
         buf.write_f64_be(0.0).unwrap();
@@ -293,7 +294,7 @@ fn play_player_position_rotation_roundtrip() {
 
 #[test]
 fn play_set_player_ground_roundtrip() {
-    let packet: play::SSetPlayerGround = write_then_read_server(&V, |buf| {
+    let packet: play::SSetPlayerGround = write_then_read_server(V, |buf| {
         buf.write_bool(true).unwrap();
         buf.write_u8(0).unwrap();
     });
@@ -302,7 +303,7 @@ fn play_set_player_ground_roundtrip() {
 
 #[test]
 fn play_player_action_roundtrip() {
-    let packet: play::SPlayerAction = write_then_read_server(&V, |buf| {
+    let packet: play::SPlayerAction = write_then_read_server(V, |buf| {
         buf.write_var_int(&VarInt(0)).unwrap();
         buf.write_i64_be(BlockPos::new(10, 64, 10).as_long())
             .unwrap();
@@ -315,7 +316,7 @@ fn play_player_action_roundtrip() {
 
 #[test]
 fn play_swing_arm_roundtrip() {
-    let packet: play::SSwingArm = write_then_read_server(&V, |buf| {
+    let packet: play::SSwingArm = write_then_read_server(V, |buf| {
         buf.write_var_int(&VarInt(0)).unwrap();
     });
     assert_eq!(packet.hand, VarInt(0));
@@ -323,7 +324,7 @@ fn play_swing_arm_roundtrip() {
 
 #[test]
 fn play_use_item_on_roundtrip() {
-    let packet: play::SUseItemOn = write_then_read_server(&V, |buf| {
+    let packet: play::SUseItemOn = write_then_read_server(V, |buf| {
         buf.write_var_int(&VarInt(0)).unwrap(); // hand
         buf.write_i64_be(BlockPos::new(100, 64, -100).as_long())
             .unwrap(); // position
@@ -341,7 +342,7 @@ fn play_use_item_on_roundtrip() {
 
 #[test]
 fn play_use_item_roundtrip() {
-    let packet: play::SUseItem = write_then_read_server(&V, |buf| {
+    let packet: play::SUseItem = write_then_read_server(V, |buf| {
         buf.write_var_int(&VarInt(0)).unwrap();
         buf.write_var_int(&VarInt(0)).unwrap();
         buf.write_f32_be(0.0).unwrap(); // yaw
@@ -352,14 +353,11 @@ fn play_use_item_roundtrip() {
 
 #[test]
 fn play_interact_roundtrip() {
-    let packet: play::SInteract = write_then_read_server(&V, |buf| {
-        // V_1_21_4 uses the old format (type field + f32 position)
+    let packet: play::SInteract = write_then_read_server(V, |buf| {
+        // 26.2 uses hand followed by the compact low-precision vector.
         buf.write_var_int(&VarInt(42)).unwrap(); // entity_id
-        buf.write_var_int(&VarInt(2)).unwrap(); // type: InteractAt
-        buf.write_f32_be(1.5).unwrap(); // target_x
-        buf.write_f32_be(2.5).unwrap(); // target_y
-        buf.write_f32_be(3.5).unwrap(); // target_z
         buf.write_var_int(&VarInt(0)).unwrap(); // hand
+        LpVector3d(Vector3::new(1.5, 2.5, 3.5)).write(buf).unwrap();
         buf.write_bool(false).unwrap(); // sneaking
     });
     assert_eq!(packet.entity_id, VarInt(42));
@@ -367,7 +365,7 @@ fn play_interact_roundtrip() {
 
 #[test]
 fn play_player_command_roundtrip() {
-    let packet: play::SPlayerCommand = write_then_read_server(&V, |buf| {
+    let packet: play::SPlayerCommand = write_then_read_server(V, |buf| {
         buf.write_var_int(&VarInt(0)).unwrap(); // entity_id
         buf.write_var_int(&VarInt(0)).unwrap(); // action: StartSneaking
         buf.write_var_int(&VarInt(0)).unwrap(); // jump_boost
@@ -377,7 +375,7 @@ fn play_player_command_roundtrip() {
 
 #[test]
 fn play_player_input_roundtrip() {
-    let packet: play::SPlayerInput = write_then_read_server(&V, |buf| {
+    let packet: play::SPlayerInput = write_then_read_server(V, |buf| {
         buf.write_i8(play::SPlayerInput::FORWARD | play::SPlayerInput::JUMP)
             .unwrap();
     });
@@ -389,7 +387,7 @@ fn play_player_input_roundtrip() {
 
 #[test]
 fn play_set_held_item_roundtrip() {
-    let packet: play::SSetHeldItem = write_then_read_server(&V, |buf| {
+    let packet: play::SSetHeldItem = write_then_read_server(V, |buf| {
         buf.write_i16_be(4).unwrap();
     });
     assert_eq!(packet.slot, 4);
@@ -397,7 +395,7 @@ fn play_set_held_item_roundtrip() {
 
 #[test]
 fn play_set_creative_slot_roundtrip() {
-    let packet: play::SSetCreativeSlot = write_then_read_server(&V, |buf| {
+    let packet: play::SSetCreativeSlot = write_then_read_server(V, |buf| {
         buf.write_i16_be(36).unwrap();
         buf.write_bool(false).unwrap(); // no item
     });
@@ -406,7 +404,7 @@ fn play_set_creative_slot_roundtrip() {
 
 #[test]
 fn play_close_container_roundtrip() {
-    let packet: play::SCloseContainer = write_then_read_server(&V, |buf| {
+    let packet: play::SCloseContainer = write_then_read_server(V, |buf| {
         buf.write_var_int(&VarInt(0)).unwrap();
     });
     assert_eq!(packet.window_id, VarInt(0));
@@ -414,16 +412,15 @@ fn play_close_container_roundtrip() {
 
 #[test]
 fn play_change_game_mode_roundtrip() {
-    let packet: play::SChangeGameMode = write_then_read_server(&V, |buf| {
+    let packet: play::SChangeGameMode = write_then_read_server(V, |buf| {
         buf.write_u8(1).unwrap(); // Creative
     });
-    use pumpkin_util::GameMode;
     assert_eq!(packet.game_mode, GameMode::Creative);
 }
 
 #[test]
 fn play_paddle_boat_roundtrip() {
-    let packet: play::SPaddleBoat = write_then_read_server(&V, |buf| {
+    let packet: play::SPaddleBoat = write_then_read_server(V, |buf| {
         buf.write_bool(true).unwrap();
         buf.write_bool(false).unwrap();
     });
@@ -433,7 +430,7 @@ fn play_paddle_boat_roundtrip() {
 
 #[test]
 fn play_move_vehicle_roundtrip() {
-    let packet: play::SMoveVehicle = write_then_read_server(&V, |buf| {
+    let packet: play::SMoveVehicle = write_then_read_server(V, |buf| {
         buf.write_f64_be(0.0).unwrap();
         buf.write_f64_be(64.0).unwrap();
         buf.write_f64_be(0.0).unwrap();
@@ -445,7 +442,7 @@ fn play_move_vehicle_roundtrip() {
 
 #[test]
 fn play_player_abilities_roundtrip() {
-    let packet: play::SPlayerAbilities = write_then_read_server(&V, |buf| {
+    let packet: play::SPlayerAbilities = write_then_read_server(V, |buf| {
         buf.write_i8(0x02).unwrap(); // flying flag
     });
     assert_eq!(packet.flags, 0x02);
@@ -453,7 +450,7 @@ fn play_player_abilities_roundtrip() {
 
 #[test]
 fn play_pick_item_from_block_roundtrip() {
-    let packet: play::SPickItemFromBlock = write_then_read_server(&V, |buf| {
+    let packet: play::SPickItemFromBlock = write_then_read_server(V, |buf| {
         buf.write_i64_be(BlockPos::new(0, 0, 0).as_long()).unwrap();
         buf.write_bool(true).unwrap();
     });
@@ -462,7 +459,7 @@ fn play_pick_item_from_block_roundtrip() {
 
 #[test]
 fn play_ping_request_roundtrip() {
-    let packet: play::SPlayPingRequest = write_then_read_server(&V, |buf| {
+    let packet: play::SPlayPingRequest = write_then_read_server(V, |buf| {
         buf.write_i64_be(42).unwrap();
     });
     assert_eq!(packet.payload, 42);
@@ -471,7 +468,7 @@ fn play_ping_request_roundtrip() {
 #[test]
 fn play_player_session_roundtrip() {
     let uuid = uuid::Uuid::nil();
-    let packet: play::SPlayerSession = write_then_read_server(&V, |buf| {
+    let packet: play::SPlayerSession = write_then_read_server(V, |buf| {
         buf.write_uuid(&uuid).unwrap();
         buf.write_i64_be(1_234_567_890).unwrap();
         buf.write_var_int(&VarInt(32)).unwrap();
@@ -487,7 +484,7 @@ fn play_player_session_roundtrip() {
 
 #[test]
 fn play_custom_payload_roundtrip() {
-    let packet: play::SCustomPayload = write_then_read_server(&V, |buf| {
+    let packet: play::SCustomPayload = write_then_read_server(V, |buf| {
         buf.write_string("minecraft:register").unwrap();
         let data: &[u8] = &[0x00];
         buf.write_slice(data).unwrap();
@@ -498,7 +495,7 @@ fn play_custom_payload_roundtrip() {
 
 #[test]
 fn play_client_command_roundtrip() {
-    let packet: play::SClientCommand = write_then_read_server(&V, |buf| {
+    let packet: play::SClientCommand = write_then_read_server(V, |buf| {
         buf.write_var_int(&VarInt(0)).unwrap();
     });
     assert_eq!(packet.action_id, VarInt(0));
@@ -506,7 +503,7 @@ fn play_client_command_roundtrip() {
 
 #[test]
 fn play_chunk_batch_roundtrip() {
-    let packet: play::SChunkBatch = write_then_read_server(&V, |buf| {
+    let packet: play::SChunkBatch = write_then_read_server(V, |buf| {
         buf.write_f32_be(10.0).unwrap();
     });
     assert_eq!(packet.chunks_per_tick, 10.0);
@@ -514,7 +511,7 @@ fn play_chunk_batch_roundtrip() {
 
 #[test]
 fn play_cookie_response_roundtrip() {
-    let packet: play::SCookieResponse = write_then_read_server(&V, |buf| {
+    let packet: play::SCookieResponse = write_then_read_server(V, |buf| {
         buf.write_string("minecraft:test_cookie").unwrap();
         buf.write_bool(false).unwrap(); // no payload
     });
@@ -524,7 +521,7 @@ fn play_cookie_response_roundtrip() {
 
 #[test]
 fn play_cookie_response_with_payload_roundtrip() {
-    let packet: play::SCookieResponse = write_then_read_server(&V, |buf| {
+    let packet: play::SCookieResponse = write_then_read_server(V, |buf| {
         buf.write_string("session").unwrap();
         buf.write_bool(true).unwrap();
         let payload: &[u8] = &[0xDE, 0xAD, 0xBE, 0xEF];
@@ -544,7 +541,7 @@ fn play_cookie_response_with_payload_roundtrip() {
 
 #[test]
 fn very_long_locale() {
-    let packet: play::SClientInformationPlay = write_then_read_server(&V, |buf| {
+    let packet: play::SClientInformationPlay = write_then_read_server(V, |buf| {
         let long = "e".repeat(250);
         buf.write_string(&long).unwrap();
         buf.write_i8(12).unwrap();
@@ -560,7 +557,7 @@ fn very_long_locale() {
 
 #[test]
 fn zero_values_roundtrip() {
-    let packet: play::SPlayerPosition = write_then_read_server(&V, |buf| {
+    let packet: play::SPlayerPosition = write_then_read_server(V, |buf| {
         buf.write_f64_be(0.0).unwrap();
         buf.write_f64_be(0.0).unwrap();
         buf.write_f64_be(0.0).unwrap();
@@ -571,7 +568,7 @@ fn zero_values_roundtrip() {
 
 #[test]
 fn max_teleport_id() {
-    let packet: play::SConfirmTeleport = write_then_read_server(&V, |buf| {
+    let packet: play::SConfirmTeleport = write_then_read_server(V, |buf| {
         buf.write_var_int(&VarInt(i32::MAX)).unwrap();
     });
     assert_eq!(packet.teleport_id, VarInt(i32::MAX));
@@ -580,12 +577,12 @@ fn max_teleport_id() {
 #[test]
 fn status_request_no_data() {
     // Empty server status request
-    let _packet: status::SStatusRequest = write_then_read_server(&V, |_buf| {});
+    let _packet: status::SStatusRequest = write_then_read_server(V, |_buf| {});
 }
 
 #[test]
 fn empty_locale() {
-    let packet: play::SClientInformationPlay = write_then_read_server(&V, |buf| {
+    let packet: play::SClientInformationPlay = write_then_read_server(V, |buf| {
         buf.write_string("").unwrap();
         buf.write_i8(12).unwrap();
         buf.write_var_int(&VarInt(0)).unwrap();
@@ -600,7 +597,7 @@ fn empty_locale() {
 
 #[test]
 fn port_zero() {
-    let _packet: SHandShake = write_then_read_server(&V, |buf| {
+    let _packet: SHandShake = write_then_read_server(V, |buf| {
         buf.write_var_int(&VarInt(767)).unwrap();
         buf.write_string("localhost").unwrap();
         buf.write_u16_be(0).unwrap();
@@ -610,7 +607,7 @@ fn port_zero() {
 
 #[test]
 fn port_max() {
-    let packet: SHandShake = write_then_read_server(&V, |buf| {
+    let packet: SHandShake = write_then_read_server(V, |buf| {
         buf.write_var_int(&VarInt(767)).unwrap();
         buf.write_string("localhost").unwrap();
         buf.write_u16_be(u16::MAX).unwrap();
@@ -621,7 +618,7 @@ fn port_max() {
 
 #[test]
 fn long_handshake_address() {
-    let packet: SHandShake = write_then_read_server(&V, |buf| {
+    let packet: SHandShake = write_then_read_server(V, |buf| {
         buf.write_var_int(&VarInt(767)).unwrap();
         let long_addr = "a".repeat(255);
         buf.write_string(&long_addr).unwrap();

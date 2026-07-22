@@ -4,14 +4,13 @@
 //! They use the same bone block structure templates as nether fossils but with
 //! different Y levels and block replacement (diamond/deepslate vs coal/stone).
 //!
-//! This is the structure-level wrapper that uses the FossilFeature system
+//! This is the structure-level wrapper that uses the `FossilFeature` system
 //! from pumpkin-world/src/generation/feature/features/fossil.rs.
 
 use std::sync::Arc;
 
-use pumpkin_data::{Block, BlockState, Mirror, Rotation, tag};
+use pumpkin_data::{Mirror, Rotation};
 use pumpkin_util::{
-    HeightMap,
     math::{block_box::BlockBox, position::BlockPos, vector3::Vector3},
     random::{RandomGenerator, RandomImpl},
 };
@@ -89,9 +88,13 @@ impl OverworldFossilGenerator {
 
     #[must_use]
     pub const fn deepslate() -> Self {
-        Self {
-            is_deepslate: true,
-        }
+        Self { is_deepslate: true }
+    }
+}
+
+impl Default for OverworldFossilGenerator {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -131,11 +134,7 @@ impl StructureGenerator for OverworldFossilGenerator {
 
         let mut collector = StructurePiecesCollector::default();
         collector.add_piece(Box::new(OverworldFossilPiece {
-            piece: StructurePiece::new(
-                StructurePieceType::OverworldFossil,
-                bounding_box,
-                0,
-            ),
+            piece: StructurePiece::new(StructurePieceType::OverworldFossil, bounding_box, 0),
             fossil_template,
             overlay_template,
             rotation,
@@ -173,7 +172,9 @@ impl OverworldFossilPiece {
                 continue;
             }
 
-            if let Some(state) = BlockStateResolver::resolve(palette_entry, self.rotation, Mirror::default()) {
+            if let Some(state) =
+                BlockStateResolver::resolve(palette_entry, self.rotation, Mirror::default())
+            {
                 chunk.set_block_state(world_pos.x, world_pos.y, world_pos.z, state);
             }
         }
@@ -196,7 +197,7 @@ impl StructurePieceBase for OverworldFossilPiece {
         _block_registry: &dyn crate::world::WorldPortalExt,
         _random: &mut RandomGenerator,
         _seed: i64,
-        chunk_box: &BlockBox,
+        _chunk_box: &BlockBox,
     ) {
         let origin = Vector3::new(
             self.piece.bounding_box.min.x,

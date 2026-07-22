@@ -118,7 +118,7 @@ impl TaskScheduler {
     }
 
     /// Override the per-task timeout (default 45 ms).
-    pub fn set_timeout_config(&mut self, config: TickTimeoutConfig) {
+    pub const fn set_timeout_config(&mut self, config: TickTimeoutConfig) {
         self.timeout_config = config;
     }
 
@@ -196,7 +196,7 @@ impl TaskScheduler {
         if self
             .shutdown_token
             .as_ref()
-            .is_some_and(|t| t.is_cancelled())
+            .is_some_and(tokio_util::sync::CancellationToken::is_cancelled)
         {
             return;
         }
@@ -234,7 +234,9 @@ impl TaskScheduler {
                 let result = timeout(timeout_dur, async {
                     let mut store = plugin.store.lock().await;
                     match plugin.plugin_instance {
-                        crate::plugin::loader::wasm::wasm_host::PluginInstance::V0_1(ref instance) => {
+                        crate::plugin::loader::wasm::wasm_host::PluginInstance::V0_1(
+                            ref instance,
+                        ) => {
                             if let Ok(server_res) = store.data_mut().add_server(server_clone) {
                                 let _ = instance
                                     .call_handle_task(&mut *store, handler_id, server_res)
@@ -280,7 +282,7 @@ mod tests {
 
     #[tokio::test]
     async fn shutdown_token_prevents_dispatch() {
-        let scheduler = TaskScheduler::new();
+        let _scheduler = TaskScheduler::new();
         let token = CancellationToken::new();
         // We can't easily call set_shutdown_token because the field is not pub,
         // but we can verify the token logic works by using the Default impl.

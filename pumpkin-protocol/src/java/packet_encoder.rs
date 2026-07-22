@@ -101,9 +101,9 @@ impl<W: AsyncWrite + Unpin> TCPNetworkEncoder<W> {
     }
 
     fn get_writer(&mut self) -> Result<&mut EncryptionWriter<W>, PacketEncodeError> {
-        self.writer.as_mut().ok_or_else(|| {
-            PacketEncodeError::Message("Writer not initialized".into())
-        })
+        self.writer
+            .as_mut()
+            .ok_or_else(|| PacketEncodeError::Message("Writer not initialized".into()))
     }
 
     pub const fn set_compression(

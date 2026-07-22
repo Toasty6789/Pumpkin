@@ -158,6 +158,7 @@ pub fn preload_structure_group(group: &[&str]) {
 
 /// Preloads all major jigsaw structure templates.
 /// Call during server startup for fast structure generation.
+#[allow(clippy::too_many_lines)]
 pub fn preload_all_structure_templates() {
     let groups: &[&[&str]] = &[
         // Ancient City

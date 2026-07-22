@@ -22,17 +22,13 @@ use pumpkin_protocol::{
     codec::var_int::VarInt,
     java::{
         packet_decoder::TCPNetworkDecoder,
-        server::{
-            handshake::SHandShake,
-            login::SLoginStart,
-            play::SKeepAlive,
-        },
+        server::{handshake::SHandShake, login::SLoginStart, play::SKeepAlive},
     },
-    ser::{NetworkReadExt, NetworkWriteExt, ReadingError},
+    ser::{NetworkReadExt, NetworkWriteExt},
 };
 use pumpkin_util::version::JavaMinecraftVersion;
 
-const TEST_VERSION: JavaMinecraftVersion = JavaMinecraftVersion::V_1_21_4;
+const TEST_VERSION: JavaMinecraftVersion = JavaMinecraftVersion::V_26_2;
 
 // =========================================================================
 // 1. Truncated data
@@ -43,13 +39,10 @@ const TEST_VERSION: JavaMinecraftVersion = JavaMinecraftVersion::V_1_21_4;
 fn empty_buffer_fails() {
     let mut empty = Cursor::new(b"");
     let result = SKeepAlive::read(&mut empty, &TEST_VERSION);
-    assert!(
-        result.is_err(),
-        "Reading from an empty buffer should fail"
-    );
+    assert!(result.is_err(), "Reading from an empty buffer should fail");
 }
 
-/// A partially-written VarInt should produce a read error, not a panic.
+/// A partially-written `VarInt` should produce a read error, not a panic.
 #[test]
 fn truncated_varint_fails() {
     // VarInt encoding: 1 byte with MSB set => expects continuation
@@ -68,10 +61,7 @@ fn truncated_keep_alive_payload_fails() {
     let truncated = &buf[..4];
     let mut cursor = Cursor::new(truncated);
     let result = SKeepAlive::read(&mut cursor, &TEST_VERSION);
-    assert!(
-        result.is_err(),
-        "Truncated keep-alive payload should fail"
-    );
+    assert!(result.is_err(), "Truncated keep-alive payload should fail");
 }
 
 /// Truncate a handshake packet (has a variable-length string).
@@ -80,16 +70,14 @@ fn truncated_handshake_string_fails() {
     // Write a valid handshake, then truncate in the middle of the address
     let mut buf = Vec::new();
     buf.write_var_int(&VarInt(767)).unwrap();
-    buf.write_string("very-long-server-address.example.com").unwrap();
+    buf.write_string("very-long-server-address.example.com")
+        .unwrap();
     buf.write_u16_be(25565).unwrap();
     buf.write_var_int(&VarInt(2)).unwrap();
     let truncated = &buf[..buf.len().saturating_sub(10)];
     let mut cursor = Cursor::new(truncated);
     let result = SHandShake::read(&mut cursor, &TEST_VERSION);
-    assert!(
-        result.is_err(),
-        "Truncated handshake string should fail"
-    );
+    assert!(result.is_err(), "Truncated handshake string should fail");
 }
 
 /// Attempt to read UUID bytes that aren't all present.
@@ -108,7 +96,7 @@ fn truncated_login_start_uuid_fails() {
 // 2. Malformed VarInts
 // =========================================================================
 
-/// Overlong VarInt (more bytes than needed for the value).
+/// Overlong `VarInt` (more bytes than needed for the value).
 #[test]
 fn overlong_varint_does_not_panic() {
     // 5-byte VarInt 0x80 0x80 0x80 0x80 0x00 = 0 (overlong but valid)
@@ -118,7 +106,7 @@ fn overlong_varint_does_not_panic() {
     // Must not panic regardless of result
 }
 
-/// A VarInt that exceeds i32 range.
+/// A `VarInt` that exceeds i32 range.
 #[test]
 fn oversized_varint_does_not_panic() {
     // 10 bytes all with MSB set
@@ -192,7 +180,7 @@ async fn negative_packet_length_fails() {
     assert!(result.is_err(), "Negative packet length should fail");
 }
 
-/// A decoder presented with a length beyond MAX_PACKET_SIZE.
+/// A decoder presented with a length beyond `MAX_PACKET_SIZE`.
 #[tokio::test]
 async fn packet_length_too_large_fails() {
     let mut frame = Vec::new();
@@ -227,9 +215,9 @@ fn bit_flips_do_not_cause_panic() {
 #[tokio::test]
 async fn framed_bit_flips_do_not_cause_panic() {
     let mut frame = Vec::new();
-    frame.write_var_int(&VarInt(6)).unwrap();  // packet length
+    frame.write_var_int(&VarInt(6)).unwrap(); // packet length
     frame.write_var_int(&VarInt(42)).unwrap(); // keep-alive packet ID
-    frame.write_i64_be(0).unwrap();            // payload (keep_alive_id)
+    frame.write_i64_be(0).unwrap(); // payload (keep_alive_id)
 
     for flip_pos in 0..frame.len() {
         let mut corrupted = frame.clone();
@@ -253,8 +241,7 @@ fn handshake_port_zero() {
     buf.write_u16_be(0).unwrap();
     buf.write_var_int(&VarInt(2)).unwrap();
     let mut cursor = Cursor::new(&buf);
-    let packet = SHandShake::read(&mut cursor, &TEST_VERSION)
-        .expect("Port=0 should be valid");
+    let packet = SHandShake::read(&mut cursor, &TEST_VERSION).expect("Port=0 should be valid");
     assert_eq!(packet.server_port, 0);
 }
 
@@ -266,8 +253,8 @@ fn handshake_port_max() {
     buf.write_u16_be(u16::MAX).unwrap();
     buf.write_var_int(&VarInt(2)).unwrap();
     let mut cursor = Cursor::new(&buf);
-    let packet = SHandShake::read(&mut cursor, &TEST_VERSION)
-        .expect("Port=u16::MAX should be valid");
+    let packet =
+        SHandShake::read(&mut cursor, &TEST_VERSION).expect("Port=u16::MAX should be valid");
     assert_eq!(packet.server_port, u16::MAX);
 }
 
@@ -285,7 +272,8 @@ fn empty_locale_roundtrip() {
     buf.write_bool(true).unwrap();
     let mut cursor = Cursor::new(&buf);
     let packet = pumpkin_protocol::java::server::play::SClientInformationPlay::read(
-        &mut cursor, &TEST_VERSION,
+        &mut cursor,
+        &TEST_VERSION,
     )
     .expect("Empty locale should be valid");
     assert_eq!(packet.locale, "");
@@ -298,7 +286,6 @@ fn nil_uuid_login_start() {
     buf.write_string("Test").unwrap();
     buf.write_uuid(&uuid::Uuid::nil()).unwrap();
     let mut cursor = Cursor::new(&buf);
-    let packet = SLoginStart::read(&mut cursor, &TEST_VERSION)
-        .expect("Nil UUID should be valid");
+    let packet = SLoginStart::read(&mut cursor, &TEST_VERSION).expect("Nil UUID should be valid");
     assert_eq!(packet.uuid, uuid::Uuid::nil());
 }

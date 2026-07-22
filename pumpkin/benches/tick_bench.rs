@@ -4,9 +4,9 @@
 //! and the overhead of the tick loop itself. They exercise `ServerTickRateManager`
 //! and simulate the core tick dispatch path used by the ticker.
 
-use criterion::{Criterion, black_box, criterion_group, criterion_main};
-use std::sync::Arc;
-use std::sync::atomic::{AtomicI64, AtomicI32, Ordering};
+use criterion::{Criterion, criterion_group, criterion_main};
+use std::hint::black_box;
+use std::sync::atomic::{AtomicI32, AtomicI64, Ordering};
 use std::time::{Duration, Instant};
 
 // ---------------------------------------------------------------------------
@@ -22,7 +22,7 @@ struct BenchTickRateManager {
 
 impl BenchTickRateManager {
     fn new(tps: f32) -> Self {
-        let ns = (1_000_000_000_f64 / tps as f64) as i64;
+        let ns = (1_000_000_000f64 / tps as f64) as i64;
         Self {
             nanoseconds_per_tick: AtomicI64::new(ns),
         }
@@ -42,9 +42,7 @@ impl BenchTickRateManager {
 /// benchmark loop.
 fn generate_tick_intervals(count: usize, tps: f32) -> Vec<Duration> {
     let manager = BenchTickRateManager::new(tps);
-    (0..count)
-        .map(|_| manager.tick_interval())
-        .collect()
+    (0..count).map(|_| manager.tick_interval()).collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -115,7 +113,8 @@ fn bench_tick_accounting(c: &mut Criterion) {
         let tick_times: [AtomicI64; 100] = std::array::from_fn(|_| AtomicI64::new(0));
 
         b.iter(|| {
-            let duration_ns: i64 = 5_000_000 + (tick_count.load(Ordering::Relaxed) as i64 % 1_000_000);
+            let duration_ns: i64 =
+                5_000_000 + (tick_count.load(Ordering::Relaxed) as i64 % 1_000_000);
             let index = tick_count.fetch_add(1, Ordering::Relaxed) as usize % 100;
             let _old = tick_times[index].swap(duration_ns, Ordering::Relaxed);
             black_box((tick_count.load(Ordering::Relaxed), index));

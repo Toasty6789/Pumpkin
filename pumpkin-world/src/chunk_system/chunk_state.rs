@@ -79,7 +79,6 @@ impl From<ChunkStatus> for StagedChunkEnum {
     }
 }
 
-#[expect(clippy::fallible_impl_from)]
 impl From<StagedChunkEnum> for ChunkStatus {
     fn from(status: StagedChunkEnum) -> Self {
         match status {
@@ -95,7 +94,9 @@ impl From<StagedChunkEnum> for ChunkStatus {
             StagedChunkEnum::Spawn => Self::Spawn,
             StagedChunkEnum::Full => Self::Full,
             StagedChunkEnum::None => {
-                tracing::error!("Cannot convert StagedChunkEnum::None to ChunkStatus, falling back to Empty");
+                tracing::error!(
+                    "Cannot convert StagedChunkEnum::None to ChunkStatus, falling back to Empty"
+                );
                 Self::Empty
             }
         }
@@ -174,8 +175,7 @@ impl StagedChunkEnum {
             Self::Lighting => &[Self::Features, Self::Features],
             Self::Spawn => &[Self::Lighting, Self::Lighting],
             Self::Full => &[Self::Spawn, Self::Spawn],
-            Self::None => &[],
-            Self::Empty => &[],
+            Self::None | Self::Empty => &[],
         }
     }
 }

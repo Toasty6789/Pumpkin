@@ -3427,20 +3427,44 @@ impl NBTStorage for Entity {
     fn read_nbt_non_mut<'a>(&'a self, nbt: &'a NbtCompound) -> NbtFuture<'a, ()> {
         Box::pin(async {
             let position = nbt.get_list("Pos").unwrap_or(&[]);
-            let x = position.first().and_then(|v| v.extract_double()).unwrap_or(0.0);
-            let y = position.get(1).and_then(|v| v.extract_double()).unwrap_or(0.0);
-            let z = position.get(2).and_then(|v| v.extract_double()).unwrap_or(0.0);
+            let x = position
+                .first()
+                .and_then(pumpkin_nbt::tag::NbtTag::extract_double)
+                .unwrap_or(0.0);
+            let y = position
+                .get(1)
+                .and_then(pumpkin_nbt::tag::NbtTag::extract_double)
+                .unwrap_or(0.0);
+            let z = position
+                .get(2)
+                .and_then(pumpkin_nbt::tag::NbtTag::extract_double)
+                .unwrap_or(0.0);
             let pos = Vector3::new(x, y, z);
             self.set_pos(pos);
             self.last_sent_pos.store(pos);
             let velocity = nbt.get_list("Motion").unwrap_or(&[]);
-            let x = velocity.first().and_then(|v| v.extract_double()).unwrap_or(0.0);
-            let y = velocity.get(1).and_then(|v| v.extract_double()).unwrap_or(0.0);
-            let z = velocity.get(2).and_then(|v| v.extract_double()).unwrap_or(0.0);
+            let x = velocity
+                .first()
+                .and_then(pumpkin_nbt::tag::NbtTag::extract_double)
+                .unwrap_or(0.0);
+            let y = velocity
+                .get(1)
+                .and_then(pumpkin_nbt::tag::NbtTag::extract_double)
+                .unwrap_or(0.0);
+            let z = velocity
+                .get(2)
+                .and_then(pumpkin_nbt::tag::NbtTag::extract_double)
+                .unwrap_or(0.0);
             self.velocity.store(Vector3::new(x, y, z));
             let rotation = nbt.get_list("Rotation").unwrap_or(&[]);
-            let yaw = rotation.first().and_then(|v| v.extract_float()).unwrap_or(0.0);
-            let pitch = rotation.get(1).and_then(|v| v.extract_float()).unwrap_or(0.0);
+            let yaw = rotation
+                .first()
+                .and_then(pumpkin_nbt::tag::NbtTag::extract_float)
+                .unwrap_or(0.0);
+            let pitch = rotation
+                .get(1)
+                .and_then(pumpkin_nbt::tag::NbtTag::extract_float)
+                .unwrap_or(0.0);
             self.set_rotation(yaw, pitch);
             let yaw_byte = (yaw * 256.0 / 360.0).rem_euclid(256.0) as u8;
             let pitch_byte = (pitch * 256.0 / 360.0).rem_euclid(256.0) as u8;

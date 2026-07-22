@@ -184,7 +184,9 @@ pub async fn io_write_work(recv: AsyncRx<Vec<(ChunkPos, Chunk)>>, level: Arc<Lev
                         &level.lighting_config,
                     );
                     let Chunk::Level(chunk) = temp else {
-                        tracing::error!("Failed to upgrade proto chunk to level chunk after upgrade_to_level_chunk call");
+                        tracing::error!(
+                            "Failed to upgrade proto chunk to level chunk after upgrade_to_level_chunk call"
+                        );
                         continue;
                     };
                     vec.push((pos, chunk));

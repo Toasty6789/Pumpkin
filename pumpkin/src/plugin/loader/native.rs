@@ -41,7 +41,7 @@ impl PluginLoader for NativePluginLoader {
             // Use NativePluginHandle to validate and load the vtable-based plugin.
             let handle = unsafe {
                 NativePluginHandle::load(library.clone())
-                    .map_err(|e| LoaderError::InitializationFailed(e))?
+                    .map_err(LoaderError::InitializationFailed)?
             };
 
             // Build an adapter that turns the vtable plugin into the server's
@@ -76,11 +76,11 @@ impl PluginLoader for NativePluginLoader {
 
     fn unload(&self, data: Box<dyn Any + Send + Sync>) -> PluginUnloadFuture<'_> {
         Box::pin(async {
-            let _library = data
+            let library = data
                 .downcast::<Arc<Library>>()
                 .map_err(|_| LoaderError::InvalidLoaderData)?;
             // Dropping the Arc will close the library when all references are gone.
-            drop(_library);
+            drop(library);
             Ok(())
         })
     }
@@ -110,12 +110,18 @@ unsafe impl Send for NativePluginAdapter {}
 unsafe impl Sync for NativePluginAdapter {}
 
 impl Plugin for NativePluginAdapter {
-    fn on_load(&mut self, _server: Arc<crate::plugin::api::Context>) -> crate::plugin::api::PluginFuture<'_, Result<(), String>> {
+    fn on_load(
+        &mut self,
+        _server: Arc<crate::plugin::api::Context>,
+    ) -> crate::plugin::api::PluginFuture<'_, Result<(), String>> {
         // The vtable's init was already called during NativePluginHandle::load.
         Box::pin(async move { Ok(()) })
     }
 
-    fn on_unload(&mut self, _server: Arc<crate::plugin::api::Context>) -> crate::plugin::api::PluginFuture<'_, Result<(), String>> {
+    fn on_unload(
+        &mut self,
+        _server: Arc<crate::plugin::api::Context>,
+    ) -> crate::plugin::api::PluginFuture<'_, Result<(), String>> {
         self.handle.shutdown("plugin unloaded");
         Box::pin(async move { Ok(()) })
     }

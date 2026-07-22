@@ -85,7 +85,7 @@ impl TreeFeature {
         let mut queue = log_positions
             .iter()
             .copied()
-            .map(|pos| (pos, 0_u8))
+            .map(|pos| (pos, 0u8))
             .collect::<VecDeque<_>>();
 
         while let Some((pos, distance)) = queue.pop_front() {

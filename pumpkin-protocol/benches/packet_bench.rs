@@ -32,7 +32,7 @@ use pumpkin_protocol::{
 };
 use pumpkin_util::version::JavaMinecraftVersion;
 
-const BENCH_VERSION: JavaMinecraftVersion = JavaMinecraftVersion::V_1_21_4;
+const BENCH_VERSION: JavaMinecraftVersion = JavaMinecraftVersion::V_26_2;
 
 // ---------------------------------------------------------------------------
 // Helper: pre-encode a ServerPacket into raw bytes for decode benchmarks
@@ -54,7 +54,7 @@ fn bench_encode_clientbound(c: &mut Criterion) {
     let keep_alive = CKeepAlive::new(999);
 
     let status_response = CStatusResponse::new(String::from(
-        r#"{"description":"A Pumpkin Server","players":{"max":100,"online":0},"version":{"name":"1.21.4","protocol":769}}"#,
+        r#"{"description":"A Pumpkin Server","players":{"max":100,"online":0},"version":{"name":"26.2","protocol":776}}"#,
     ));
 
     group.bench_function(BenchmarkId::new("encode", "keep_alive"), |b| {
@@ -157,7 +157,8 @@ fn bench_encode_throughput(c: &mut Criterion) {
         b.iter(|| {
             for _ in 0..1000 {
                 let mut buf = Vec::with_capacity(16);
-                black_box(packet.write_packet_data(&mut buf, &BENCH_VERSION));
+                black_box(packet.write_packet_data(&mut buf, &BENCH_VERSION))
+                    .expect("keep-alive packet encoding should succeed");
             }
         });
     });

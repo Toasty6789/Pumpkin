@@ -67,20 +67,27 @@ impl TickMetrics {
     /// `duration_ns` is clamped to `u32::MAX` (~4.3 s) which is more than
     /// enough for any real tick.
     pub fn record(&self, duration_ns: u64) {
-        let idx = self.cursor.fetch_add(1, Ordering::Release) as usize % self.history.len();
-        self.history[idx].store(duration_ns.min(u64::from(u32::MAX)) as u32, Ordering::Relaxed);
+        let idx =
+            self.cursor.fetch_add(1, Ordering::Release) as usize % usize::from(self.window_size);
+        self.history[idx].store(
+            duration_ns.min(u64::from(u32::MAX)) as u32,
+            Ordering::Relaxed,
+        );
     }
 
     /// Return a snapshot of the current window: `(min, max, avg)` in
     /// nanoseconds.  Returns all zeros if no ticks have been recorded yet.
     pub fn snapshot(&self) -> (u64, u64, f64) {
-        let count = self.cursor.load(Ordering::Acquire).min(u32::from(self.window_size));
+        let count = self
+            .cursor
+            .load(Ordering::Acquire)
+            .min(u32::from(self.window_size));
         if count == 0 {
             return (0, 0, 0.0);
         }
 
         let mut min_ns = u64::MAX;
-        let mut max_ns = 0_u64;
+        let mut max_ns = 0u64;
         let mut sum: u64 = 0;
 
         for i in 0..(count as usize) {
@@ -248,7 +255,6 @@ impl Ticker {
             // we skip missed deadlines so a single slow tick doesn't cascade
             // into a stream of catch-up ticks.
             // -----------------------------------------------------------------
-            let now = Instant::now();
             if tick_ns_u64 > tick_interval.as_nanos() as u64 {
                 // This tick overran its budget. Count how many periods were
                 // missed and bump `next_tick` past them.

@@ -12,43 +12,33 @@
 //! - taiga:    `minecraft:village/taiga/town_centers`
 //!
 //! Each variant shares the pool hierarchy pattern:
-//! - {biome}/town_centers
+//! - {`biome}/town_centers`
 //! - {biome}/houses
 //! - {biome}/streets
 //! - {biome}/terminators
 //! - {biome}/decor (optional)
 //! - {biome}/villagers (entity spawns)
-//! - common/ (animals, iron_golem, well_bottoms, cats, sheep, butcher_animals)
+//! - common/ (animals, `iron_golem`, `well_bottoms`, cats, sheep, `butcher_animals`)
 //!
 //! Zombie variant pools under {biome}/zombie/ use zombie processors
-//! (zombie_plains, zombie_desert, zombie_savanna, zombie_snowy, zombie_taiga)
+//! (`zombie_plains`, `zombie_desert`, `zombie_savanna`, `zombie_snowy`, `zombie_taiga`)
 //! that replace villagers with zombie villagers.
 
-use std::sync::Arc;
 use pumpkin_data::structures::StructureKeys;
-use pumpkin_util::{
-    math::{block_box::BlockBox, position::BlockPos},
-    random::RandomGenerator,
-};
+use pumpkin_util::{math::block_box::BlockBox, random::RandomGenerator};
 
 use crate::{
     ProtoChunk,
-    generation::{
-        structure::{
-            piece::StructurePieceType,
-            structures::{
-                StructureGenerator, StructureGeneratorContext, StructurePiece, StructurePieceBase,
-                StructurePiecesCollector, StructurePosition, WorldPortalExt,
-            },
-        },
+    generation::structure::structures::{
+        StructureGenerator, StructureGeneratorContext, StructurePiece, StructurePieceBase,
+        StructurePosition, WorldPortalExt,
     },
 };
 
 /// Returns the start pool for a village biome variant.
 #[must_use]
-pub fn village_start_pool(key: StructureKeys) -> &'static str {
+pub const fn village_start_pool(key: StructureKeys) -> &'static str {
     match key {
-        StructureKeys::VillagePlains => "minecraft:village/plains/town_centers",
         StructureKeys::VillageDesert => "minecraft:village/desert/town_centers",
         StructureKeys::VillageSavanna => "minecraft:village/savanna/town_centers",
         StructureKeys::VillageSnowy => "minecraft:village/snowy/town_centers",
@@ -57,7 +47,7 @@ pub fn village_start_pool(key: StructureKeys) -> &'static str {
     }
 }
 
-/// Places a village using the JigsawGenerator for the given biome key.
+/// Places a village using the `JigsawGenerator` for the given biome key.
 #[must_use]
 pub fn generate_village(
     context: StructureGeneratorContext<'_>,

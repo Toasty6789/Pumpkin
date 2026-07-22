@@ -8,30 +8,20 @@
 //! Size: 7
 //!
 //! Pool hierarchy:
-//! - pillager_outpost/base_plates (base plate for the outpost)
-//! - pillager_outpost/towers (the main watchtower)
-//! - pillager_outpost/feature_plates (plates for attaching cage features)
-//! - pillager_outpost/features (cages, tents, targets, logs)
+//! - `pillager_outpost/base_plates` (base plate for the outpost)
+//! - `pillager_outpost/towers` (the main watchtower)
+//! - `pillager_outpost/feature_plates` (plates for attaching cage features)
+//! - `pillager_outpost/features` (cages, tents, targets, logs)
 //!
-//! Processor: outpost_rot (rubble/rotation)
+//! Processor: `outpost_rot` (rubble/rotation)
 
-use std::sync::Arc;
-
-use pumpkin_util::{
-    math::{block_box::BlockBox, position::BlockPos},
-    random::RandomGenerator,
-};
+use pumpkin_util::{math::block_box::BlockBox, random::RandomGenerator};
 
 use crate::{
     ProtoChunk,
-    generation::{
-        structure::{
-            piece::StructurePieceType,
-            structures::{
-                StructureGenerator, StructureGeneratorContext, StructurePiece, StructurePieceBase,
-                StructurePiecesCollector, StructurePosition, WorldPortalExt,
-            },
-        },
+    generation::structure::structures::{
+        StructureGenerator, StructureGeneratorContext, StructurePiece, StructurePieceBase,
+        StructurePosition, WorldPortalExt,
     },
 };
 
@@ -43,10 +33,8 @@ impl StructureGenerator for PillagerOutpostGenerator {
         &self,
         context: StructureGeneratorContext<'_>,
     ) -> Option<StructurePosition> {
-        let generator = super::jigsaw::JigsawGenerator::new(
-            "minecraft:pillager_outpost/base_plates",
-            7,
-        );
+        let generator =
+            super::jigsaw::JigsawGenerator::new("minecraft:pillager_outpost/base_plates", 7);
         generator.get_structure_position(context)
     }
 }

@@ -1522,7 +1522,7 @@ impl GenerationCache for ProtoChunk {
 
     fn get_block_state(&self, pos: &Vector3<i32>) -> BlockStateId {
         if (pos.x >> 4) == self.x && (pos.z >> 4) == self.z {
-            ProtoChunk::get_block_state(self, pos)
+            Self::get_block_state(self, pos)
         } else {
             BlockStateId::AIR
         }
@@ -1548,38 +1548,38 @@ impl GenerationCache for ProtoChunk {
 
     fn set_block_state(&mut self, pos: &Vector3<i32>, block_state: &BlockState) {
         if (pos.x >> 4) == self.x && (pos.z >> 4) == self.z {
-            ProtoChunk::set_block_state(self, pos.x, pos.y, pos.z, block_state);
+            Self::set_block_state(self, pos.x, pos.y, pos.z, block_state);
         }
     }
 
     fn add_block_entity(&mut self, pos: &Vector3<i32>, nbt: NbtCompound) {
         if (pos.x >> 4) == self.x && (pos.z >> 4) == self.z {
-            ProtoChunk::add_block_entity(self, nbt);
+            Self::add_block_entity(self, nbt);
         }
     }
 
     fn top_motion_blocking_block_height_exclusive(&self, x: i32, z: i32) -> i32 {
-        ProtoChunk::top_motion_blocking_block_height_exclusive(self, x, z)
+        Self::top_motion_blocking_block_height_exclusive(self, x, z)
     }
 
     fn top_motion_blocking_block_no_leaves_height_exclusive(&self, x: i32, z: i32) -> i32 {
-        ProtoChunk::top_motion_blocking_block_no_leaves_height_exclusive(self, x, z)
+        Self::top_motion_blocking_block_no_leaves_height_exclusive(self, x, z)
     }
 
     fn get_top_y(&self, heightmap: &HeightMap, x: i32, z: i32) -> i32 {
-        ProtoChunk::get_top_y(self, heightmap, x, z)
+        Self::get_top_y(self, heightmap, x, z)
     }
 
     fn top_block_height_exclusive(&self, x: i32, z: i32) -> i32 {
-        ProtoChunk::top_block_height_exclusive(self, x, z)
+        Self::top_block_height_exclusive(self, x, z)
     }
 
     fn ocean_floor_height_exclusive(&self, x: i32, z: i32) -> i32 {
-        ProtoChunk::ocean_floor_height_exclusive(self, x, z)
+        Self::ocean_floor_height_exclusive(self, x, z)
     }
 
     fn is_air(&self, local_pos: &Vector3<i32>) -> bool {
-        ProtoChunk::is_air(self, local_pos)
+        Self::is_air(self, local_pos)
     }
 
     fn get_biome_for_terrain_gen(&self, x: i32, y: i32, z: i32) -> &'static Biome {

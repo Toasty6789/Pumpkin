@@ -4,40 +4,30 @@
 //! blackstone, basalt, and gold blocks. They generate in Crimson Forest and
 //! Nether Wastes biomes.
 //!
-//! Structure type: Jigsaw (structure_type: Jigsaw)
+//! Structure type: Jigsaw (`structure_type`: Jigsaw)
 //! Start pool: `minecraft:bastion/starts`
 //! Size: 6
 //! Start height: 33
 //!
 //! Pool groups:
 //! - bastion/starts
-//! - bastion/bridge/* (starting_pieces, bridge_pieces, connectors, legs, ramparts, walls)
-//! - bastion/hoglin_stable/* (starting_pieces, large_stables, small_stables, connectors, ...)
+//! - bastion/bridge/* (`starting_pieces`, `bridge_pieces`, connectors, legs, ramparts, walls)
+//! - `bastion/hoglin_stable`/* (`starting_pieces`, `large_stables`, `small_stables`, connectors, ...)
 //! - bastion/treasure/* (bases, brains, corners, entrances, extensions, ramparts, roofs, stairs, walls)
-//! - bastion/units/* (center_pieces, edges, fillers, pathways, stages, wall_units, walls)
+//! - bastion/units/* (`center_pieces`, edges, fillers, pathways, stages, `wall_units`, walls)
 //! - bastion/blocks/gold (for gold block replacement in structures)
 //!
-//! Processors: bastion_generic_degradation, bottom_rampart, bridge, high_rampart,
-//!             high_wall, housing, rampart_degradation, roof, side_wall_degradation,
-//!             stable_degradation, treasure_rooms
+//! Processors: `bastion_generic_degradation`, `bottom_rampart`, bridge, `high_rampart`,
+//!             `high_wall`, housing, `rampart_degradation`, roof, `side_wall_degradation`,
+//!             `stable_degradation`, `treasure_rooms`
 
-use std::sync::Arc;
-
-use pumpkin_util::{
-    math::{block_box::BlockBox, position::BlockPos},
-    random::RandomGenerator,
-};
+use pumpkin_util::{math::block_box::BlockBox, random::RandomGenerator};
 
 use crate::{
     ProtoChunk,
-    generation::{
-        structure::{
-            piece::StructurePieceType,
-            structures::{
-                StructureGenerator, StructureGeneratorContext, StructurePiece, StructurePieceBase,
-                StructurePiecesCollector, StructurePosition, WorldPortalExt,
-            },
-        },
+    generation::structure::structures::{
+        StructureGenerator, StructureGeneratorContext, StructurePiece, StructurePieceBase,
+        StructurePosition, WorldPortalExt,
     },
 };
 
@@ -49,10 +39,7 @@ impl StructureGenerator for BastionRemnantGenerator {
         &self,
         context: StructureGeneratorContext<'_>,
     ) -> Option<StructurePosition> {
-        let generator = super::jigsaw::JigsawGenerator::new(
-            "minecraft:bastion/starts",
-            6,
-        );
+        let generator = super::jigsaw::JigsawGenerator::new("minecraft:bastion/starts", 6);
         generator.get_structure_position(context)
     }
 }

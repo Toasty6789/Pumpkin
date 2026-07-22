@@ -8,6 +8,7 @@
 //! player ticks within the 50 ms budget required for 20 TPS.
 
 use criterion::{Criterion, criterion_group, criterion_main};
+use std::hint::black_box;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::time::{Duration, Instant};
@@ -55,6 +56,7 @@ impl SimulatedPlayer {
         // This models the actual overhead of packet encoding, state machines,
         // and inventory lookups without pulling in the full protocol stack.
         let _ = self.tick_count.fetch_add(1, Ordering::Relaxed);
+        black_box(self.id);
         let _connected = self.connected.load(Ordering::Relaxed);
         // Yield so the runtime can schedule other players.
         tokio::task::yield_now().await;
@@ -73,8 +75,9 @@ async fn run_player_stress(
     concurrency_limit: usize,
 ) -> Duration {
     // Create players
-    let players: Vec<Arc<SimulatedPlayer>> =
-        (0..player_count).map(|i| SimulatedPlayer::new(i as u32)).collect();
+    let players: Vec<Arc<SimulatedPlayer>> = (0..player_count)
+        .map(|i| SimulatedPlayer::new(i as u32))
+        .collect();
 
     // Semaphore to cap concurrent player ticks (mirrors JoinSet behaviour).
     let semaphore = Arc::new(Semaphore::new(concurrency_limit));
@@ -93,9 +96,7 @@ async fn run_player_stress(
         }
         // Wait for all players in this tick to finish.
         while let Some(res) = set.join_next().await {
-            if let Err(e) = res {
-                eprintln!("[stress] Player tick panicked: {e}");
-            }
+            res.expect("simulated player tick task panicked");
         }
     }
 
@@ -116,7 +117,7 @@ fn bench_player_stress(c: &mut Criterion) {
                 let elapsed = run_player_stress(DEFAULT_PLAYER_COUNT, 1, usize::MAX).await;
                 // Return the elapsed time so black_box can prevent the compiler
                 // from optimising the whole loop away.
-                criterion::black_box(elapsed);
+                black_box(elapsed);
             });
         },
     );
@@ -126,7 +127,7 @@ fn bench_player_stress(c: &mut Criterion) {
         |b| {
             b.to_async(&rt).iter(|| async {
                 let elapsed = run_player_stress(DEFAULT_PLAYER_COUNT, 5, usize::MAX).await;
-                criterion::black_box(elapsed);
+                black_box(elapsed);
             });
         },
     );
@@ -137,7 +138,7 @@ fn bench_player_stress(c: &mut Criterion) {
         |b| {
             b.to_async(&rt).iter(|| async {
                 let elapsed = run_player_stress(DEFAULT_PLAYER_COUNT, 1, 64).await;
-                criterion::black_box(elapsed);
+                black_box(elapsed);
             });
         },
     );
@@ -178,7 +179,7 @@ async fn player_stress_small_batch() {
 criterion_group!(
     name = player_stress;
     config = Criterion::default()
-        .warm_up_time(Duration::from_millis(1000))
+        .warm_up_time(Duration::from_secs(1))
         .measurement_time(Duration::from_secs(5))
         .sample_size(20);
     targets = bench_player_stress,

@@ -388,7 +388,10 @@ impl ChunkLoading {
                 }
             }
             Entry::Vacant(pos) => {
-                tracing::error!("No pos_level entry found for {:?} when removing ticket", pos.key());
+                tracing::error!(
+                    "No pos_level entry found for {:?} when removing ticket",
+                    pos.key()
+                );
             }
         }
         debug_assert!(self.debug_check_error());

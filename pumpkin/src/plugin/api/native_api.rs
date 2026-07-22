@@ -7,15 +7,14 @@
 //!
 //! This module is consumed by [`super::super::loader::native`].
 
-use std::ffi::CStr;
 use std::sync::Arc;
 
 use libloading::Library;
 use tracing::{debug, info};
 
-use pumpkin_plugin_api::native::events::{EventCallback, EventRegistration};
+use pumpkin_plugin_api::native::events::EventRegistration;
 use pumpkin_plugin_api::native::types::{
-    CStringDropVTable, EventCallbackResult, LogLevel, OwnedPluginMetadata, PluginApiVersion,
+    CStringDropVTable, EventCallbackResult, LogLevel, PluginApiVersion,
 };
 use pumpkin_plugin_api::native::vtable::PluginVTable;
 
@@ -29,7 +28,7 @@ use crate::plugin::PLUGIN_API_VERSION;
 /// A loaded native plugin, holding the dynamic library and its validated vtable.
 pub struct NativePluginHandle {
     /// The underlying dynamic library — kept alive for the plugin's lifetime.
-    pub(crate) library: Arc<Library>,
+    pub(crate) _library: Arc<Library>,
     /// The resolved vtable (static reference — valid as long as `library` lives).
     pub(crate) vtable: &'static PluginVTable,
     /// Plugin metadata (owned copy, converted from C-ABI).
@@ -37,9 +36,9 @@ pub struct NativePluginHandle {
     /// Opaque state pointer returned by the plugin's `init` hook.
     pub(crate) user_data: *mut std::ffi::c_void,
     /// Optional string free vtable from the plugin.
-    pub(crate) string_drop: Option<CStringDropVTable>,
+    pub(crate) _string_drop: Option<CStringDropVTable>,
     /// Registered event registrations (owned copies).
-    pub(crate) event_registrations: Vec<EventRegistration>,
+    pub(crate) _event_registrations: Vec<EventRegistration>,
 }
 
 // Safety: `user_data` is only accessed through the vtable functions.
@@ -88,9 +87,8 @@ impl NativePluginHandle {
         // 3. Validate compatibility (same major = compatible).
         if !server_api_version.compatible_with(&plugin_api_version) {
             return Err(format!(
-                "Plugin API version mismatch: plugin v{}, server v{} \
+                "Plugin API version mismatch: plugin v{plugin_api_version}, server v{server_api_version} \
                  (major versions differ — rebuild plugin against this server)",
-                plugin_api_version, server_api_version,
             ));
         }
 
@@ -131,11 +129,9 @@ impl NativePluginHandle {
         };
 
         // 6. Call the init hook if present.
-        let user_data = if let Some(init_fn) = vtable.init {
-            unsafe { init_fn(std::ptr::null(), 0) }
-        } else {
-            std::ptr::null_mut()
-        };
+        let user_data = vtable.init.map_or(std::ptr::null_mut(), |init_fn| unsafe {
+            init_fn(std::ptr::null(), 0)
+        });
 
         // 7. Collect event registrations.
         let event_registrations = Self::collect_event_registrations(vtable);
@@ -153,12 +149,12 @@ impl NativePluginHandle {
         );
 
         Ok(Self {
-            library,
+            _library: library,
             vtable,
             metadata,
             user_data,
-            string_drop,
-            event_registrations,
+            _string_drop: string_drop,
+            _event_registrations: event_registrations,
         })
     }
 
@@ -170,7 +166,7 @@ impl NativePluginHandle {
 
         unsafe {
             let mut count: usize = 0;
-            let ptr = get_regs(&mut count as *mut usize);
+            let ptr = get_regs(&raw mut count);
             if ptr.is_null() || count == 0 {
                 return Vec::new();
             }
@@ -207,6 +203,7 @@ impl NativePluginHandle {
     }
 
     /// Deliver an event to the plugin.
+    #[must_use]
     pub fn handle_event(&self, event_id: u32, data: &[u8]) -> EventCallbackResult {
         let Some(handle_fn) = self.vtable.handle_event else {
             return EventCallbackResult::Continue;
@@ -227,25 +224,20 @@ impl NativePluginHandle {
 
     /// Return the plugin metadata (borrowed).
     #[must_use]
-    pub fn metadata(&self) -> &PluginMetadata {
+    pub const fn metadata(&self) -> &PluginMetadata {
         &self.metadata
     }
 
     /// Return the number of commands registered by this plugin.
     #[must_use]
     pub fn command_count(&self) -> u32 {
-        self.vtable
-            .get_command_count
-            .map_or(0, |f| unsafe { f() })
+        self.vtable.get_command_count.map_or(0, |f| unsafe { f() })
     }
 }
 
 impl Drop for NativePluginHandle {
     fn drop(&mut self) {
-        debug!(
-            "Dropping native plugin handle for '{}'",
-            self.metadata.name,
-        );
+        debug!("Dropping native plugin handle for '{}'", self.metadata.name,);
     }
 }
 

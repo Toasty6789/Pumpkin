@@ -10,35 +10,25 @@
 //! Start jigsaw: `minecraft:bottom`
 //!
 //! Pool hierarchy:
-//! - trail_ruins/tower/tower_top (tower top piece)
-//! - trail_ruins/tower/additions (tower side additions)
-//! - trail_ruins/buildings (main buildings)
-//! - trail_ruins/buildings/grouped (grouped building variants)
-//! - trail_ruins/roads (road pieces)
-//! - trail_ruins/decor (decorative pieces)
+//! - `trail_ruins/tower/tower_top` (tower top piece)
+//! - `trail_ruins/tower/additions` (tower side additions)
+//! - `trail_ruins/buildings` (main buildings)
+//! - `trail_ruins/buildings/grouped` (grouped building variants)
+//! - `trail_ruins/roads` (road pieces)
+//! - `trail_ruins/decor` (decorative pieces)
 //!
 //! Processors:
-//! - trail_ruins_houses_archaeology (3 processors)
-//! - trail_ruins_roads_archaeology
-//! - trail_ruins_tower_top_archaeology
+//! - `trail_ruins_houses_archaeology` (3 processors)
+//! - `trail_ruins_roads_archaeology`
+//! - `trail_ruins_tower_top_archaeology`
 
-use std::sync::Arc;
-
-use pumpkin_util::{
-    math::{block_box::BlockBox, position::BlockPos},
-    random::RandomGenerator,
-};
+use pumpkin_util::{math::block_box::BlockBox, random::RandomGenerator};
 
 use crate::{
     ProtoChunk,
-    generation::{
-        structure::{
-            piece::StructurePieceType,
-            structures::{
-                StructureGenerator, StructureGeneratorContext, StructurePiece, StructurePieceBase,
-                StructurePiecesCollector, StructurePosition, WorldPortalExt,
-            },
-        },
+    generation::structure::structures::{
+        StructureGenerator, StructureGeneratorContext, StructurePiece, StructurePieceBase,
+        StructurePosition, WorldPortalExt,
     },
 };
 
@@ -50,11 +40,9 @@ impl StructureGenerator for TrailRuinsGenerator {
         &self,
         context: StructureGeneratorContext<'_>,
     ) -> Option<StructurePosition> {
-        let generator = super::jigsaw::JigsawGenerator::new(
-            "minecraft:trail_ruins/tower/tower_top",
-            7,
-        )
-        .with_start_jigsaw("minecraft:bottom");
+        let generator =
+            super::jigsaw::JigsawGenerator::new("minecraft:trail_ruins/tower/tower_top", 7)
+                .with_start_jigsaw("minecraft:bottom");
 
         generator.get_structure_position(context)
     }

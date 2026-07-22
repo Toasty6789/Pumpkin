@@ -31,7 +31,6 @@ use crate::native::types::{
 #[derive(Debug, Clone)]
 pub struct PluginVTable {
     // -- identity / introspection -------------------------------------------
-
     /// Semantic version of the plugin API this plugin was compiled against.
     pub api_version: PluginApiVersion,
 
@@ -40,7 +39,6 @@ pub struct PluginVTable {
     pub metadata: *const PluginMetadata,
 
     // -- lifecycle hooks ----------------------------------------------------
-
     /// Called once when the plugin is first loaded.
     ///
     /// The plugin should perform one-time initialisation (register commands,
@@ -66,7 +64,6 @@ pub struct PluginVTable {
         Option<unsafe extern "C" fn(user_data: *mut c_void, reason: *const core::ffi::c_char)>,
 
     // -- event system -------------------------------------------------------
-
     /// Return an array of [`EventRegistration`]s describing which events this
     /// plugin wants to listen to.
     ///
@@ -95,22 +92,20 @@ pub struct PluginVTable {
     >,
 
     // -- command system -----------------------------------------------------
-
     /// Return the number of commands this plugin registers.
     pub get_command_count: Option<unsafe extern "C" fn() -> u32>,
 
     // -- logging ------------------------------------------------------------
-
     /// Log a message through the plugin's own logging facility.
     pub log: Option<
         unsafe extern "C" fn(
             level: LogLevel,
             message: *const core::ffi::c_char,
             user_data: *mut c_void,
-        )>,
+        ),
+    >,
 
     // -- string management --------------------------------------------------
-
     /// Optional vtable for freeing strings allocated by the server.
     pub string_drop: Option<CStringDropVTable>,
 }
@@ -191,8 +186,8 @@ macro_rules! declare_native_plugin {
 
         // Vtable accessor function.
         #[no_mangle]
-        pub unsafe extern "C" fn PUMPKIN_PLUGIN_VTABLE(
-        ) -> *const $crate::native::vtable::PluginVTable {
+        pub unsafe extern "C" fn PUMPKIN_PLUGIN_VTABLE()
+        -> *const $crate::native::vtable::PluginVTable {
             &PLUGIN_VTABLE as *const $crate::native::vtable::PluginVTable
         }
     };
@@ -280,10 +275,7 @@ pub trait NativePlugin: Send + Sync + 'static {
     }
 
     #[doc(hidden)]
-    unsafe extern "C" fn ffi_shutdown(
-        user_data: *mut c_void,
-        reason: *const core::ffi::c_char,
-    ) {
+    unsafe extern "C" fn ffi_shutdown(user_data: *mut c_void, reason: *const core::ffi::c_char) {
         Self::on_shutdown(user_data, reason);
     }
 
@@ -292,7 +284,9 @@ pub trait NativePlugin: Send + Sync + 'static {
         out_count: *mut usize,
     ) -> *const EventRegistration {
         let regs = Self::get_event_registrations();
-        unsafe { *out_count = regs.len(); }
+        unsafe {
+            *out_count = regs.len();
+        }
         regs.as_ptr()
     }
 

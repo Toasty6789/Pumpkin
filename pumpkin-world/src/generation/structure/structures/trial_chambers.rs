@@ -10,39 +10,29 @@
 //! Start jigsaw: `minecraft:entrance`
 //!
 //! Pool hierarchy:
-//! - trial_chambers/corridor (first corridor piece)
-//! - trial_chambers/corridor/slices (corridor slice pieces)
-//! - trial_chambers/corridor/atrium (atrium rooms off corridors)
-//! - trial_chambers/hallway (hallway connections)
-//! - trial_chambers/intersection (intersection pieces)
-//! - trial_chambers/chamber/* (chamber, addon, assembly, end, eruption, pedestal, slanted)
-//! - trial_chambers/spawner/* (breeze, melee, ranged, slow_ranged, small_melee)
-//! - trial_chambers/decor (decorative elements)
-//! - trial_chambers/dispensers (dispenser/supply pieces)
-//! - trial_chambers/chests (chest pieces)
-//! - trial_chambers/reward (reward vault pieces)
+//! - `trial_chambers/corridor` (first corridor piece)
+//! - `trial_chambers/corridor/slices` (corridor slice pieces)
+//! - `trial_chambers/corridor/atrium` (atrium rooms off corridors)
+//! - `trial_chambers/hallway` (hallway connections)
+//! - `trial_chambers/intersection` (intersection pieces)
+//! - `trial_chambers/chamber`/* (chamber, addon, assembly, end, eruption, pedestal, slanted)
+//! - `trial_chambers/spawner`/* (breeze, melee, ranged, `slow_ranged`, `small_melee`)
+//! - `trial_chambers/decor` (decorative elements)
+//! - `trial_chambers/dispensers` (dispenser/supply pieces)
+//! - `trial_chambers/chests` (chest pieces)
+//! - `trial_chambers/reward` (reward vault pieces)
 //!
-//! Processor: trial_chambers_copper_bulb_degradation
+//! Processor: `trial_chambers_copper_bulb_degradation`
 //!
 //! Trial chambers use an expansion hack to ensure proper room height.
 
-use std::sync::Arc;
-
-use pumpkin_util::{
-    math::{block_box::BlockBox, position::BlockPos},
-    random::RandomGenerator,
-};
+use pumpkin_util::{math::block_box::BlockBox, random::RandomGenerator};
 
 use crate::{
     ProtoChunk,
-    generation::{
-        structure::{
-            piece::StructurePieceType,
-            structures::{
-                StructureGenerator, StructureGeneratorContext, StructurePiece, StructurePieceBase,
-                StructurePiecesCollector, StructurePosition, WorldPortalExt,
-            },
-        },
+    generation::structure::structures::{
+        StructureGenerator, StructureGeneratorContext, StructurePiece, StructurePieceBase,
+        StructurePosition, WorldPortalExt,
     },
 };
 
@@ -55,12 +45,9 @@ impl StructureGenerator for TrialChambersGenerator {
         context: StructureGeneratorContext<'_>,
     ) -> Option<StructurePosition> {
         // Trial chambers use an expansion hack for space generation
-        let mut generator = super::jigsaw::JigsawGenerator::new(
-            "minecraft:trial_chambers/corridor",
-            7,
-        )
-        .with_start_jigsaw("minecraft:entrance")
-        .with_expansion_hack(true);
+        let generator = super::jigsaw::JigsawGenerator::new("minecraft:trial_chambers/corridor", 7)
+            .with_start_jigsaw("minecraft:entrance")
+            .with_expansion_hack(true);
 
         generator.get_structure_position(context)
     }

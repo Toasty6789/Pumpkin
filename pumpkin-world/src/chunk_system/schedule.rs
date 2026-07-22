@@ -514,7 +514,9 @@ impl GenerationSchedule {
                                 self.listener.process_new_chunk(pos, chunk);
                             }
                             Chunk::Proto(_) => {
-                                tracing::error!("Chunk at {pos:?} is ProtoChunk but expected Level chunk at Full stage");
+                                tracing::error!(
+                                    "Chunk at {pos:?} is ProtoChunk but expected Level chunk at Full stage"
+                                );
                             }
                         }
                     }
@@ -1224,7 +1226,9 @@ impl GenerationSchedule {
                                 let Some(tmp) = tmp else {
                                     tracing::error!(
                                         "Missing chunk for position {:?} while processing generation task for {:?} stage {:?}. Skipping.",
-                                        new_pos, node.pos, node.stage
+                                        new_pos,
+                                        node.pos,
+                                        node.stage
                                     );
                                     continue;
                                 };

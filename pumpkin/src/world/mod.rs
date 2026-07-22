@@ -3,6 +3,7 @@ use dashmap::DashMap;
 use pumpkin_data::attributes::Attributes;
 use pumpkin_data::chunk::Biome;
 use pumpkin_data::item::{BedrockItem, BedrockItemVersion};
+use pumpkin_data::packet::CURRENT_MC_VERSION;
 use pumpkin_protocol::bedrock::client::item_registry::{CItemRegistry, ItemDefinition};
 use pumpkin_protocol::bedrock::client::level_event::{CLevelEvent, LevelEvent};
 use pumpkin_protocol::bedrock::client::{CInventoryContent, EntityProperties};
@@ -2416,8 +2417,7 @@ impl World {
                 MetaDataType::BYTE,
                 config.skin_parts,
             );
-            meta.write(&mut java_meta_buf, &JavaMinecraftVersion::V_1_21_4)
-                .unwrap();
+            meta.write(&mut java_meta_buf, &CURRENT_MC_VERSION).unwrap();
         };
         java_meta_buf.put_u8(255);
 
@@ -2862,8 +2862,7 @@ impl World {
                 MetaDataType::BYTE,
                 config.skin_parts,
             );
-            meta.write(&mut java_meta_buf, &JavaMinecraftVersion::V_1_21_4)
-                .unwrap();
+            meta.write(&mut java_meta_buf, &CURRENT_MC_VERSION).unwrap();
         };
         java_meta_buf.put_u8(255);
 

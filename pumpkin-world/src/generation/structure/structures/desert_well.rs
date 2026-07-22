@@ -2,7 +2,7 @@
 //!
 //! A simple desert well structure made of sandstone and sandstone slabs with
 //! water at the bottom. This is a structure-level wrapper that delegates to
-//! the DesertWellFeature for block placement.
+//! the `DesertWellFeature` for block placement.
 
 use std::sync::Arc;
 
@@ -33,7 +33,7 @@ fn try_generate_well_in_chunk(
     z: i32,
     chunk_box: &BlockBox,
 ) -> bool {
-    let mut y = chunk.get_top_y(&HeightMap::WorldSurfaceWg, x, z);
+    let y = chunk.get_top_y(&HeightMap::WorldSurfaceWg, x, z);
 
     // Check if the surface block is sand
     let base_pos = Vector3::new(x, y, z);
@@ -72,8 +72,10 @@ fn try_generate_well_in_chunk(
     for dy in 0..=1 {
         for dx in -2..=2 {
             for dz in -2..=2 {
-                if (dx == -2 || dx == 2 || dz == -2 || dz == 2) && !(dx == -2 && dz == -2)
-                    && !(dx == -2 && dz == 2) && !(dx == 2 && dz == -2)
+                if (dx == -2 || dx == 2 || dz == -2 || dz == 2)
+                    && !(dx == -2 && dz == -2)
+                    && !(dx == -2 && dz == 2)
+                    && !(dx == 2 && dz == -2)
                     && !(dx == 2 && dz == 2)
                 {
                     let pos = Vector3::new(x + dx, y + dy, z + dz);
@@ -94,8 +96,10 @@ fn try_generate_well_in_chunk(
     // Slab on top of walls
     for dx in -2..=2 {
         for dz in -2..=2 {
-            if (dx == -2 || dx == 2 || dz == -2 || dz == 2) && !(dx == -2 && dz == -2)
-                && !(dx == -2 && dz == 2) && !(dx == 2 && dz == -2)
+            if (dx == -2 || dx == 2 || dz == -2 || dz == 2)
+                && !(dx == -2 && dz == -2)
+                && !(dx == -2 && dz == 2)
+                && !(dx == 2 && dz == -2)
                 && !(dx == 2 && dz == 2)
             {
                 let pos = Vector3::new(x + dx, y + 2, z + dz);
@@ -123,11 +127,7 @@ impl StructureGenerator for DesertWellGenerator {
 
         let mut collector = StructurePiecesCollector::default();
         collector.add_piece(Box::new(DesertWellPiece {
-            piece: StructurePiece::new(
-                StructurePieceType::DesertWell,
-                bounding_box,
-                0,
-            ),
+            piece: StructurePiece::new(StructurePieceType::DesertWell, bounding_box, 0),
         }));
 
         Some(StructurePosition {

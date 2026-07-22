@@ -24,11 +24,10 @@
 //! detector.watch("player::Toast", Arc::downgrade(&player));
 //!
 //! // Sample during the tick — logs any suspicious survivors.
-//! detector.tick().await;
+//! detector.tick();
 //! ```
 
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 use tracing::warn;
@@ -126,9 +125,9 @@ impl LeakDetector {
     ///
     /// Should be called once per server tick (or every N ticks, controlled by
     /// `sample_interval`).
-    pub async fn tick(&self) {
+    pub fn tick(&self) {
         let tick = self.tick_counter.fetch_add(1, Ordering::Relaxed);
-        if tick as u32 % self.sample_interval != 0 {
+        if !(tick as u32).is_multiple_of(self.sample_interval) {
             return;
         }
 
@@ -159,9 +158,7 @@ impl LeakDetector {
                         warn!(
                             "LeakDetector: possible leak for `{}` — strong_count={} \
                              (above the expected baseline of 1), has been alive for ≥{} ticks",
-                            tracked.label,
-                            current_count,
-                            self.grace_ticks,
+                            tracked.label, current_count, self.grace_ticks,
                         );
                         // Reset the timer to avoid spamming every tick.
                         tracked.first_seen = Some(now);
@@ -183,10 +180,7 @@ impl LeakDetector {
     /// Return the number of currently tracked resources.
     #[must_use]
     pub fn tracked_count(&self) -> usize {
-        self.resources
-            .lock()
-            .map(|g| g.len())
-            .unwrap_or(0)
+        self.resources.lock().map_or(0, |g| g.len())
     }
 
     /// Generate a diagnostic report of all currently tracked resources and
@@ -222,23 +216,23 @@ mod tests {
     use super::*;
     use std::sync::Arc;
 
-    #[tokio::test]
-    async fn track_and_release() {
+    #[test]
+    fn track_and_release() {
         let detector = LeakDetector::with_params(10, 1);
         let data = Arc::new(());
         let weak = Arc::downgrade(&data);
 
-        detector.watch("test::data", weak.clone());
+        detector.watch("test::data", weak);
         assert_eq!(detector.tracked_count(), 1);
 
         // After the Arc is dropped, the next tick should clean it up.
         drop(data);
-        detector.tick().await;
+        detector.tick();
         assert_eq!(detector.tracked_count(), 0);
     }
 
-    #[tokio::test]
-    async fn survivor_under_threshold_not_reported() {
+    #[test]
+    fn survivor_under_threshold_not_reported() {
         // Use a very long grace period so the survivor is NOT reported.
         let detector = LeakDetector::with_params(1_000_000, 1);
         let data = Arc::new(());
@@ -246,18 +240,19 @@ mod tests {
 
         detector.watch("test::survivor", weak);
         // Hold the Arc so it stays alive.
-        let _alive = data.clone();
+        let alive = [data.clone(), data];
+        assert_eq!(Arc::strong_count(&alive[0]), 2);
 
         for _ in 0..5 {
-            detector.tick().await;
+            detector.tick();
         }
 
         // The entry should still be present (not cleaned because strong_count > 0).
         assert_eq!(detector.tracked_count(), 1);
     }
 
-    #[tokio::test]
-    async fn explicit_unwatch() {
+    #[test]
+    fn explicit_unwatch() {
         let detector = LeakDetector::new();
         let data = Arc::new(());
         detector.watch("test::unwatch", Arc::downgrade(&data));

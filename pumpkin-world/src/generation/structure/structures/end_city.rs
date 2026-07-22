@@ -183,7 +183,7 @@ impl StructurePieceBase for EndCityPiece {
 }
 
 /// Generator for the End Ship as a standalone structure piece.
-/// The ship can be identified as StructurePieceType::EndCityShip for
+/// The ship can be identified as `StructurePieceType::EndCityShip` for
 /// mod compatibility and debug visualization.
 pub struct EndCityShipGenerator;
 

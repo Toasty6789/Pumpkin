@@ -60,6 +60,7 @@ pub use template_piece::TemplatePiece;
 /// `origin` is the base world position (x, y, z).
 /// `offset` is the un-rotated XZ offset from origin (`x_offset`, `z_offset`) - rotation is applied automatically.
 #[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_lines)]
 pub fn place_template(
     chunk: &mut ProtoChunk,
     template: &StructureTemplate,
@@ -215,12 +216,22 @@ pub fn place_template(
 
         // Create a copy of the entity NBT with updated position
         let mut entity_nbt = NbtCompound::new();
-        entity_nbt.put_string("id", entity.nbt.get_string("id").unwrap_or("minecraft:armor_stand").to_string());
-        entity_nbt.put_list("Pos", vec![
-            NbtTag::Double(wx as f64 + 0.5),
-            NbtTag::Double(wy as f64),
-            NbtTag::Double(wz as f64 + 0.5),
-        ]);
+        entity_nbt.put_string(
+            "id",
+            entity
+                .nbt
+                .get_string("id")
+                .unwrap_or("minecraft:armor_stand")
+                .to_string(),
+        );
+        entity_nbt.put_list(
+            "Pos",
+            vec![
+                NbtTag::Double(wx as f64 + 0.5),
+                NbtTag::Double(wy as f64),
+                NbtTag::Double(wz as f64 + 0.5),
+            ],
+        );
 
         // Copy remaining NBT fields
         for (key, value) in &entity.nbt.child_tags {
