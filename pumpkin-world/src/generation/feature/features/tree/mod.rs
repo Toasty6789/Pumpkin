@@ -1,9 +1,14 @@
 use decorator::TreeDecorator;
 use foliage::FoliagePlacer;
 use pumpkin_data::BlockState;
-use pumpkin_data::{BlockId, tag};
+use pumpkin_data::{
+    BlockDirection, BlockId,
+    block_properties::{BlockProperties, OakLeavesLikeProperties},
+    tag,
+};
 use pumpkin_util::{math::position::BlockPos, random::RandomGenerator};
 use root::RootPlacer;
+use std::collections::{HashSet, VecDeque};
 
 use trunk::TrunkPlacer;
 
@@ -66,7 +71,45 @@ impl TreeFeature {
                 &foliage_positions,
             );
         }
+        Self::update_leaf_distances(chunk, &log_positions, &foliage_positions);
         true
+    }
+
+    fn update_leaf_distances<T: GenerationCache>(
+        chunk: &mut T,
+        log_positions: &[BlockPos],
+        foliage_positions: &[BlockPos],
+    ) {
+        let foliage = foliage_positions.iter().copied().collect::<HashSet<_>>();
+        let mut visited = log_positions.iter().copied().collect::<HashSet<_>>();
+        let mut queue = log_positions
+            .iter()
+            .copied()
+            .map(|pos| (pos, 0_u8))
+            .collect::<VecDeque<_>>();
+
+        while let Some((pos, distance)) = queue.pop_front() {
+            if distance >= 6 {
+                continue;
+            }
+            let leaf_distance = distance + 1;
+            for direction in BlockDirection::all() {
+                let neighbor = pos.offset(direction.to_offset());
+                if !foliage.contains(&neighbor) || !visited.insert(neighbor) {
+                    continue;
+                }
+
+                let state_id = GenerationCache::get_block_state(chunk, &neighbor.0);
+                let block = state_id.to_block();
+                if !block.id.has_tag(tag::Block::MINECRAFT_LEAVES) {
+                    continue;
+                }
+                let mut properties = OakLeavesLikeProperties::from_state_id(state_id, block);
+                properties.distance = leaf_distance;
+                chunk.set_block_state(&neighbor.0, properties.to_state_id(block).to_state());
+                queue.push_back((neighbor, leaf_distance));
+            }
+        }
     }
 
     pub fn can_replace_or_log(state: &BlockState, id: BlockId) -> bool {
@@ -167,5 +210,64 @@ impl TreeFeature {
             }
         }
         height
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::TreeFeature;
+    use crate::generation::{
+        generator::{WorldGenerator, flat::FlatGenerator},
+        proto_chunk::{GenerationCache, ProtoChunk},
+    };
+    use pumpkin_data::{
+        Block,
+        block_properties::{BlockProperties, OakLeavesLikeProperties},
+        dimension::Dimension,
+    };
+    use pumpkin_util::{math::position::BlockPos, world_seed::Seed};
+
+    #[test]
+    fn generated_leaves_receive_distance_from_connected_logs() {
+        let generator = WorldGenerator::Flat(FlatGenerator::new(
+            Seed(0),
+            Dimension::OVERWORLD,
+            Vec::new(),
+            String::new(),
+        ));
+        let mut chunk = ProtoChunk::new(0, 0, &generator);
+        let log = BlockPos::new(8, 64, 8);
+        let near_leaf = BlockPos::new(9, 64, 8);
+        let next_leaf = BlockPos::new(10, 64, 8);
+        let disconnected_leaf = BlockPos::new(12, 64, 8);
+        let leaves = OakLeavesLikeProperties {
+            distance: 7,
+            persistent: false,
+            waterlogged: true,
+        }
+        .to_state_id(&Block::OAK_LEAVES)
+        .to_state();
+
+        GenerationCache::set_block_state(&mut chunk, &log.0, Block::OAK_LOG.default_state);
+        for pos in [near_leaf, next_leaf, disconnected_leaf] {
+            GenerationCache::set_block_state(&mut chunk, &pos.0, leaves);
+        }
+
+        TreeFeature::update_leaf_distances(
+            &mut chunk,
+            &[log],
+            &[near_leaf, next_leaf, disconnected_leaf],
+        );
+
+        let properties_at = |pos: BlockPos| {
+            OakLeavesLikeProperties::from_state_id(
+                GenerationCache::get_block_state(&chunk, &pos.0),
+                &Block::OAK_LEAVES,
+            )
+        };
+        assert_eq!(properties_at(near_leaf).distance, 1);
+        assert_eq!(properties_at(next_leaf).distance, 2);
+        assert_eq!(properties_at(disconnected_leaf).distance, 7);
+        assert!(properties_at(near_leaf).waterlogged);
     }
 }

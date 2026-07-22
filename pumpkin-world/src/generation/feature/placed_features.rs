@@ -51,22 +51,20 @@ impl PlacedFeature {
     pub fn generate_in_proto_chunk(
         &self,
         chunk: &mut crate::ProtoChunk,
+        block_registry: &dyn WorldPortalExt,
         feature_name: pumpkin_data::placed_feature::PlacedFeature,
         random: &mut RandomGenerator,
         pos: BlockPos,
     ) -> bool {
-        let feature = match &self.feature {
-            Feature::Named(name) => CONFIGURED_FEATURES
-                .get(name)
-                .expect("Name: {name:?} not found"),
-            Feature::Inlined(feature) => feature,
-        };
-        if let ConfiguredFeature::SculkPatch(feature) = feature {
-            feature.generate_in_proto_chunk(chunk, random, pos)
-        } else {
-            tracing::warn!("Placed feature {feature_name:?} is not supported in a jigsaw pool");
-            false
-        }
+        self.generate(
+            chunk,
+            block_registry,
+            chunk.bottom_y(),
+            chunk.height(),
+            feature_name,
+            random,
+            pos,
+        )
     }
 
     #[expect(clippy::too_many_arguments)]
@@ -553,3 +551,93 @@ pub trait ConditionalPlacementModifier {
 // in `src/generated` so it’s easier to find when upgrading MC versions.
 // the path is relative to this file (up two levels to reach `src`).
 include!("../../../../pumpkin-data/src/generated/placed_features_generated.rs");
+
+#[cfg(test)]
+mod tests {
+    use super::PLACED_FEATURES;
+    use crate::generation::{
+        generator::{WorldGenerator, flat::FlatGenerator},
+        proto_chunk::{GenerationCache, ProtoChunk},
+    };
+    use crate::world::{BlockAccessor, WorldPortalExt};
+    use pumpkin_data::{Block, BlockState, BlockStateId, Mirror, Rotation, dimension::Dimension};
+    use pumpkin_util::{
+        math::{position::BlockPos, vector3::Vector3},
+        random::{RandomGenerator, xoroshiro128::Xoroshiro},
+        world_seed::Seed,
+    };
+
+    struct TestBlockRegistry;
+
+    impl WorldPortalExt for TestBlockRegistry {
+        fn can_place_at(
+            &self,
+            _block: &Block,
+            _state: &BlockState,
+            _block_accessor: &dyn BlockAccessor,
+            _block_pos: &BlockPos,
+        ) -> bool {
+            true
+        }
+
+        fn mirror(
+            &self,
+            block: &Block,
+            state_id: BlockStateId,
+            mirror: Mirror,
+        ) -> &'static BlockState {
+            block.mirror(state_id, mirror)
+        }
+
+        fn rotate(
+            &self,
+            block: &Block,
+            state_id: BlockStateId,
+            rotation: Rotation,
+        ) -> &'static BlockState {
+            block.rotate(state_id, rotation)
+        }
+
+        fn spawn_mobs_for_chunk_generation(
+            &self,
+            _cache: &mut dyn crate::generation::proto_chunk::GenerationCache,
+            _biome: &'static pumpkin_data::chunk::Biome,
+            _chunk_x: i32,
+            _chunk_z: i32,
+        ) {
+        }
+    }
+
+    #[test]
+    fn jigsaw_pool_generation_supports_pine_placed_feature() {
+        let generator = WorldGenerator::Flat(FlatGenerator::new(
+            Seed(0),
+            Dimension::OVERWORLD,
+            Vec::new(),
+            String::new(),
+        ));
+        let mut chunk = ProtoChunk::new(0, 0, &generator);
+        let feature_name = pumpkin_data::placed_feature::PlacedFeature::Pine;
+        let feature = PLACED_FEATURES.get(&feature_name).unwrap();
+        let mut random = RandomGenerator::Xoroshiro(Xoroshiro::from_seed(0));
+        let pos = BlockPos::new(8, 64, 8);
+        GenerationCache::set_block_state(&mut chunk, &pos.down().0, Block::DIRT.default_state);
+
+        assert!(feature.generate_in_proto_chunk(
+            &mut chunk,
+            &TestBlockRegistry,
+            feature_name,
+            &mut random,
+            pos,
+        ));
+        let generated_tree_blocks = (64..80)
+            .flat_map(|y| (4..=12).flat_map(move |x| (4..=12).map(move |z| Vector3::new(x, y, z))))
+            .filter(|pos| {
+                let block = chunk.get_block_state(pos).to_block_id();
+                block.has_tag(pumpkin_data::tag::Block::MINECRAFT_LOGS)
+                    || block.has_tag(pumpkin_data::tag::Block::MINECRAFT_LEAVES)
+            })
+            .count();
+        assert!(generated_tree_blocks > 0);
+    }
+}

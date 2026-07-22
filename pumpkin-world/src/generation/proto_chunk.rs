@@ -1498,3 +1498,103 @@ impl BlockAccessor for ProtoChunk {
         BlockState::from_id_with_block(id)
     }
 }
+
+impl GenerationCache for ProtoChunk {
+    fn get_center_chunk_mut(&mut self) -> &mut ProtoChunk {
+        self
+    }
+
+    fn get_center_chunk(&self) -> &ProtoChunk {
+        self
+    }
+
+    fn get_chunk_mut(&mut self, chunk_x: i32, chunk_z: i32) -> Option<&mut ProtoChunk> {
+        (self.x == chunk_x && self.z == chunk_z).then_some(self)
+    }
+
+    fn get_chunk(&self, chunk_x: i32, chunk_z: i32) -> Option<&ProtoChunk> {
+        (self.x == chunk_x && self.z == chunk_z).then_some(self)
+    }
+
+    fn try_get_proto_chunk(&self, chunk_x: i32, chunk_z: i32) -> Option<&ProtoChunk> {
+        self.get_chunk(chunk_x, chunk_z)
+    }
+
+    fn get_block_state(&self, pos: &Vector3<i32>) -> BlockStateId {
+        if (pos.x >> 4) == self.x && (pos.z >> 4) == self.z {
+            ProtoChunk::get_block_state(self, pos)
+        } else {
+            BlockStateId::AIR
+        }
+    }
+
+    fn get_fluid_and_fluid_state(&self, position: &Vector3<i32>) -> (Fluid, FluidState) {
+        let state_id = GenerationCache::get_block_state(self, position);
+        if let Some(fluid) = Fluid::from_state_id(state_id) {
+            let state = fluid.states[0].clone();
+            return (fluid.clone(), state);
+        }
+        let block = Block::from_state_id(state_id);
+        if block
+            .properties(state_id)
+            .is_some_and(|properties| properties.to_props().contains(&("waterlogged", "true")))
+        {
+            let fluid = Fluid::FLOWING_WATER;
+            return (fluid.clone(), fluid.states[0].clone());
+        }
+        let fluid = Fluid::EMPTY;
+        (fluid.clone(), fluid.states[0].clone())
+    }
+
+    fn set_block_state(&mut self, pos: &Vector3<i32>, block_state: &BlockState) {
+        if (pos.x >> 4) == self.x && (pos.z >> 4) == self.z {
+            ProtoChunk::set_block_state(self, pos.x, pos.y, pos.z, block_state);
+        }
+    }
+
+    fn add_block_entity(&mut self, pos: &Vector3<i32>, nbt: NbtCompound) {
+        if (pos.x >> 4) == self.x && (pos.z >> 4) == self.z {
+            ProtoChunk::add_block_entity(self, nbt);
+        }
+    }
+
+    fn top_motion_blocking_block_height_exclusive(&self, x: i32, z: i32) -> i32 {
+        ProtoChunk::top_motion_blocking_block_height_exclusive(self, x, z)
+    }
+
+    fn top_motion_blocking_block_no_leaves_height_exclusive(&self, x: i32, z: i32) -> i32 {
+        ProtoChunk::top_motion_blocking_block_no_leaves_height_exclusive(self, x, z)
+    }
+
+    fn get_top_y(&self, heightmap: &HeightMap, x: i32, z: i32) -> i32 {
+        ProtoChunk::get_top_y(self, heightmap, x, z)
+    }
+
+    fn top_block_height_exclusive(&self, x: i32, z: i32) -> i32 {
+        ProtoChunk::top_block_height_exclusive(self, x, z)
+    }
+
+    fn ocean_floor_height_exclusive(&self, x: i32, z: i32) -> i32 {
+        ProtoChunk::ocean_floor_height_exclusive(self, x, z)
+    }
+
+    fn is_air(&self, local_pos: &Vector3<i32>) -> bool {
+        ProtoChunk::is_air(self, local_pos)
+    }
+
+    fn get_biome_for_terrain_gen(&self, x: i32, y: i32, z: i32) -> &'static Biome {
+        self.get_terrain_gen_biome(x, y, z)
+    }
+
+    fn get_blending_data(
+        &self,
+        chunk_x: i32,
+        chunk_z: i32,
+    ) -> Option<&crate::generation::blender::blending_data::BlendingData> {
+        if self.x == chunk_x && self.z == chunk_z {
+            self.blending_data.as_ref()
+        } else {
+            None
+        }
+    }
+}
