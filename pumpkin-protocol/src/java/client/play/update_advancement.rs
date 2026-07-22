@@ -116,3 +116,29 @@ impl ClientPacket for CUpdateAdvancements {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::CUpdateAdvancements;
+    use crate::ClientPacket;
+    use pumpkin_data::Advancement;
+    use pumpkin_util::version::JavaMinecraftVersion;
+
+    #[test]
+    fn advancement_icon_serializes_for_java_26_2() {
+        let packet = CUpdateAdvancements::new(
+            false,
+            vec![Advancement::ADVENTURE_ROOT],
+            Vec::new(),
+            Vec::new(),
+            true,
+        );
+        let mut encoded = Vec::new();
+
+        packet
+            .write_packet_data(&mut encoded, &JavaMinecraftVersion::V_26_2)
+            .expect("advancement icon should serialize for Java 26.2");
+
+        assert!(!encoded.is_empty());
+    }
+}
