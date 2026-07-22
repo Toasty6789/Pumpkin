@@ -62,9 +62,25 @@ pub enum StructurePieceType {
 
     // End / Other
     EndCity,
+    EndCityShip,
     WoodlandMansion,
     BuriedTreasure,
     Shipwreck,
     NetherFossil,
+    OverworldFossil,
+    DesertWell,
+    OceanRuin,
     Jigsaw,
+    // Jigsaw Structures (share StructurePieceType::Jigsaw for all pieces)
+    // but separate enum variants for structure identification
+    AncientCity,
+    BastionRemnant,
+    PillagerOutpost,
+    TrailRuins,
+    TrialChambers,
+    VillagePlains,
+    VillageDesert,
+    VillageSavanna,
+    VillageSnowy,
+    VillageTaiga,
 }

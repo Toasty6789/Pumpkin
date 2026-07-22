@@ -33,6 +33,7 @@ mod template_piece;
 use pumpkin_data::Mirror;
 use pumpkin_data::Rotation;
 use pumpkin_nbt::compound::NbtCompound;
+use pumpkin_nbt::tag::NbtTag;
 use pumpkin_util::math::vector3::Vector3;
 use pumpkin_util::random::{RandomImpl, hash_block_pos, legacy_rand::LegacyRand};
 
@@ -192,6 +193,44 @@ pub fn place_template(
 
             chunk.add_block_entity(placed_nbt);
         }
+    }
+
+    // Place template entities (villagers, armor stands, etc.)
+    for entity in &template.entities {
+        let rotated_pos = rotation.transform_pos(entity.block_pos, template.size);
+        let wx = world_x + rotated_pos.x;
+        let wy = origin.y + rotated_pos.y;
+        let wz = world_z + rotated_pos.z;
+
+        if let Some(bbox) = chunk_box
+            && (wx < bbox.min.x
+                || wx > bbox.max.x
+                || wy < bbox.min.y
+                || wy > bbox.max.y
+                || wz < bbox.min.z
+                || wz > bbox.max.z)
+        {
+            continue;
+        }
+
+        // Create a copy of the entity NBT with updated position
+        let mut entity_nbt = NbtCompound::new();
+        entity_nbt.put_string("id", entity.nbt.get_string("id").unwrap_or("minecraft:armor_stand").to_string());
+        entity_nbt.put_list("Pos", vec![
+            NbtTag::Double(wx as f64 + 0.5),
+            NbtTag::Double(wy as f64),
+            NbtTag::Double(wz as f64 + 0.5),
+        ]);
+
+        // Copy remaining NBT fields
+        for (key, value) in &entity.nbt.child_tags {
+            let key_str = key.as_ref();
+            if key_str != "id" && key_str != "Pos" {
+                entity_nbt.child_tags.insert(key.clone(), value.clone());
+            }
+        }
+
+        chunk.add_block_entity(entity_nbt);
     }
 }
 

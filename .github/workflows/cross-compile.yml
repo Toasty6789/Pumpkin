@@ -1,0 +1,97 @@
+# =============================================================================
+# Cross-Compilation Verification Workflow
+# =============================================================================
+#
+# This workflow verifies that Pumpkin compiles successfully for all supported
+# target architectures and operating systems. It runs `cargo check` (not a full
+# build) for each target to validate type correctness without producing binaries,
+# making it fast enough to run on every push and pull request.
+#
+# Targets verified:
+#   x86_64-unknown-linux-gnu   — Linux (x86_64)
+#   x86_64-pc-windows-gnu       — Windows (x86_64, MinGW toolchain)
+#   aarch64-apple-darwin        — macOS (Apple Silicon)
+#   x86_64-apple-darwin         — macOS (Intel)
+#   aarch64-linux-android       — Android (API 21+, aarch64)
+#   x86_64-unknown-freebsd      — FreeBSD (x86_64)
+#
+# =============================================================================
+
+name: Cross-Compilation
+
+on:
+  push:
+    branches: [master, main, develop]
+  pull_request:
+    branches: [master, main, develop]
+  # Allow manual trigger from GitHub Actions UI
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-Dwarnings"
+
+jobs:
+  # ── Cross-compile check job ──────────────────────────────────────────────
+  cross-check:
+    name: cargo check (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false  # Do not cancel other targets if one fails
+      matrix:
+        target:
+          - x86_64-unknown-linux-gnu
+          - x86_64-pc-windows-gnu
+          - aarch64-apple-darwin
+          - x86_64-apple-darwin
+          - aarch64-linux-android
+          - x86_64-unknown-freebsd
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - name: Install Rust toolchain
+        run: |
+          rustup update stable && rustup default stable
+
+      - name: Add cross-compilation target
+        run: rustup target add ${{ matrix.target }}
+
+      # Install cross-compilation tools for non-Linux targets
+      - name: Install cross-compilation toolchain (Windows/MinGW)
+        if: matrix.target == 'x86_64-pc-windows-gnu'
+        run: sudo apt-get update && sudo apt-get install -y gcc-mingw-w64-x86-64
+
+      - name: Install cross-compilation toolchain (Android)
+        if: matrix.target == 'aarch64-linux-android'
+        run: |
+          sudo apt-get update && sudo apt-get install -y \
+            gcc-aarch64-linux-gnu libc6-dev-arm64-cross
+
+      - name: Install cross-compilation toolchain (FreeBSD)
+        if: matrix.target == 'x86_64-unknown-freebsd'
+        run: sudo apt-get update && sudo apt-get install -y clang lld
+
+      # Use Swatinem/rust-cache for shared target directory caching
+      - uses: Swatinem/rust-cache@v2
+
+      # Run cargo check — verifies compilation without producing binaries
+      - name: cargo check (${{ matrix.target }})
+        run: cargo check --all-targets --all-features --target ${{ matrix.target }}
+
+  # ── Summary job ──────────────────────────────────────────────────────────
+  summary:
+    name: Cross-compile summary
+    runs-on: ubuntu-latest
+    needs: [cross-check]
+    if: always()
+    steps:
+      - name: Print status
+        run: |
+          echo "## Cross-Compilation Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "All cross-compilation targets have been checked." >> $GITHUB_STEP_SUMMARY
+          echo "See individual job logs above for per-target details." >> $GITHUB_STEP_SUMMARY

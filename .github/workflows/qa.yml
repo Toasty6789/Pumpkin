@@ -1,0 +1,108 @@
+# =============================================================================
+# Quality Assurance Workflow
+# =============================================================================
+#
+# Runs the full QA suite defined by scripts/verify-release.sh on every push
+# and pull request to release branches, as well as on a weekly schedule to
+# catch bit-rot.
+#
+# Stages executed:
+#   1. cargo fmt --check
+#   2. cargo clippy -- -D warnings
+#   3. cargo check
+#   4. cargo test (all features)
+#   5. cargo test --doc
+#   6. cargo bench (smoke run)
+#   7. Protocol round-trip tests
+#   8. Malformed-packet resilience tests
+#   9. Packet benchmarks
+#
+# =============================================================================
+
+name: QA
+
+on:
+  push:
+    branches: [master, main, develop, release/*]
+  pull_request:
+    branches: [master, main, develop, release/*]
+  schedule:
+    # Run every Monday at 06:00 UTC to catch bit-rot
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-Dwarnings"
+
+jobs:
+  # ── Full QA suite ──────────────────────────────────────────────────────────
+  qa:
+    name: QA Suite
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - name: Install Rust toolchain
+        run: |
+          rustup update stable && rustup default stable
+          rustup component add rustfmt clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      # ── 1. Formatting ──────────────────────────────────────────────────────
+      - name: cargo fmt --check
+        run: cargo fmt --check
+
+      # ── 2. Clippy ──────────────────────────────────────────────────────────
+      - name: cargo clippy (deny warnings)
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      # ── 3. Compilation ─────────────────────────────────────────────────────
+      - name: cargo check (all targets)
+        run: cargo check --all-targets --all-features
+
+      # ── 4. Unit / integration tests ────────────────────────────────────────
+      - name: cargo test
+        run: cargo test --all-features --verbose
+
+      # ── 5. Documentation tests ─────────────────────────────────────────────
+      - name: cargo test (doc)
+        run: cargo test --doc --verbose
+
+      # ── 6. Benchmarks (smoke) ──────────────────────────────────────────────
+      - name: cargo bench (smoke)
+        run: cargo bench --all-features -- --warm-up-time 1 --measurement-time 1
+
+      # ── 7. Protocol round-trip fuzz tests ──────────────────────────────────
+      - name: Protocol round-trip tests
+        run: cargo test --package pumpkin-protocol --test fuzz_tests --verbose
+
+      # ── 8. Malformed-packet resilience tests ───────────────────────────────
+      - name: Malformed-packet resilience tests
+        run: cargo test --package pumpkin-protocol --test malformed_packet --verbose
+
+      # ── 9. Packet benchmarks (smoke) ───────────────────────────────────────
+      - name: Packet benchmarks
+        run: cargo bench --package pumpkin-protocol -- --warm-up-time 1 --measurement-time 1
+
+      # ── Summary ────────────────────────────────────────────────────────────
+      - name: QA Summary
+        run: |
+          echo "## ✅ QA Suite Passed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "All 9 quality stages passed successfully." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Stage | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
+          echo "| 1. cargo fmt --check | ✅ |" >> $GITHUB_STEP_SUMMARY
+          echo "| 2. cargo clippy (-D warnings) | ✅ |" >> $GITHUB_STEP_SUMMARY
+          echo "| 3. cargo check | ✅ |" >> $GITHUB_STEP_SUMMARY
+          echo "| 4. cargo test | ✅ |" >> $GITHUB_STEP_SUMMARY
+          echo "| 5. cargo test --doc | ✅ |" >> $GITHUB_STEP_SUMMARY
+          echo "| 6. cargo bench (smoke) | ✅ |" >> $GITHUB_STEP_SUMMARY
+          echo "| 7. Protocol round-trip tests | ✅ |" >> $GITHUB_STEP_SUMMARY
+          echo "| 8. Malformed-packet resilience | ✅ |" >> $GITHUB_STEP_SUMMARY
+          echo "| 9. Packet benchmarks | ✅ |" >> $GITHUB_STEP_SUMMARY

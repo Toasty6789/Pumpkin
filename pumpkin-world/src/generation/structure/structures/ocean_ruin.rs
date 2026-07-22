@@ -83,7 +83,7 @@ impl StructureGenerator for OceanRuinGenerator {
 
         let mut collector = StructurePiecesCollector::default();
         collector.add_piece(Box::new(OceanRuinPiece {
-            piece: StructurePiece::new(StructurePieceType::OceanTemple, bounding_box, 0),
+            piece: StructurePiece::new(StructurePieceType::OceanRuin, bounding_box, 0),
             template,
             rotation,
         }));

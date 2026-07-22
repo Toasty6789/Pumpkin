@@ -38,7 +38,13 @@ flate2.workspace = true
 bitflags.workspace = true
 
 [dev-dependencies]
-# Validate correctness
+criterion = { workspace = true, features = ["async_tokio"] }
+rand.workspace = true
+tokio = { workspace = true, features = ["rt", "macros"] }
+
+[[bench]]
+name = "packet_bench"
+harness = false
 
 [lints]
 workspace = true

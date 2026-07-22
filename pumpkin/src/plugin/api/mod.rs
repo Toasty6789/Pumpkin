@@ -1,6 +1,11 @@
 pub mod context;
 pub mod events;
 pub mod gui;
+/// Server-side native (C-ABI) plugin integration.
+///
+/// Provides [`native_api::NativePluginHandle`] for safe loading of compiled
+/// dynamic-library plugins via `libloading`.
+pub mod native_api;
 
 use std::{pin::Pin, sync::Arc};
 

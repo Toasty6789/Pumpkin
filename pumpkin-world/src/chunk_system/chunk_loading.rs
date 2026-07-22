@@ -387,7 +387,9 @@ impl ChunkLoading {
                     self.cache.write(&mut self.pos_level, &mut self.change);
                 }
             }
-            Entry::Vacant(_) => panic!(),
+            Entry::Vacant(pos) => {
+                tracing::error!("No pos_level entry found for {:?} when removing ticket", pos.key());
+            }
         }
         debug_assert!(self.debug_check_error());
     }

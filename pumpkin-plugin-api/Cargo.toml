@@ -12,5 +12,12 @@ postcard = { workspace = true }
 tracing-serde-structured = { workspace = true }
 serde_json = { workspace = true }
 
+# Native plugin API (C-ABI / libloading support)
+libloading = { workspace = true, optional = true }
+
+[features]
+default = ["native"]
+native = ["dep:libloading"]
+
 [package.metadata.component]
 target = { path = "../pumpkin-plugin-wit" }

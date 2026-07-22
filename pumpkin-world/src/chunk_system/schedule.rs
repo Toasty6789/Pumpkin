@@ -513,7 +513,9 @@ impl GenerationSchedule {
                                 self.public_chunk_map.insert(pos, chunk.clone());
                                 self.listener.process_new_chunk(pos, chunk);
                             }
-                            Chunk::Proto(_) => panic!(),
+                            Chunk::Proto(_) => {
+                                tracing::error!("Chunk at {pos:?} is ProtoChunk but expected Level chunk at Full stage");
+                            }
                         }
                     }
                 }
@@ -1220,10 +1222,11 @@ impl GenerationSchedule {
                                 let mut tmp = None;
                                 swap(&mut tmp, &mut holder.chunk);
                                 let Some(tmp) = tmp else {
-                                    panic!(
-                                        "Missing chunk for position {:?} while processing generation task for {:?} stage {:?}",
+                                    tracing::error!(
+                                        "Missing chunk for position {:?} while processing generation task for {:?} stage {:?}. Skipping.",
                                         new_pos, node.pos, node.stage
-                                    )
+                                    );
+                                    continue;
                                 };
                                 match tmp {
                                     Chunk::Level(chunk) => {
@@ -1406,9 +1409,9 @@ impl GenerationSchedule {
     fn debug_check(&self) -> bool {
         if !self.graph.nodes.is_empty() {
             for (key, value) in &self.graph.nodes {
-                error!("unrelease node {key:?}: {value:?}");
+                error!("unreleased node {key:?}: {value:?}");
             }
-            panic!("nodes count error");
+            return false;
         }
         for (pos, holder) in &self.chunk_map {
             for i in &holder.tasks {

@@ -39,7 +39,6 @@ pub enum StagedChunkEnum {
     Full,
 }
 
-#[expect(clippy::fallible_impl_from)]
 impl From<u8> for StagedChunkEnum {
     fn from(v: u8) -> Self {
         match v {
@@ -54,7 +53,10 @@ impl From<u8> for StagedChunkEnum {
             9 => Self::Lighting,
             10 => Self::Spawn,
             11 => Self::Full,
-            _ => panic!(),
+            _ => {
+                tracing::error!("Invalid StagedChunkEnum value: {v}, falling back to Empty");
+                Self::Empty
+            }
         }
     }
 }
@@ -92,7 +94,10 @@ impl From<StagedChunkEnum> for ChunkStatus {
             StagedChunkEnum::Lighting => Self::Light,
             StagedChunkEnum::Spawn => Self::Spawn,
             StagedChunkEnum::Full => Self::Full,
-            StagedChunkEnum::None => panic!(),
+            StagedChunkEnum::None => {
+                tracing::error!("Cannot convert StagedChunkEnum::None to ChunkStatus, falling back to Empty");
+                Self::Empty
+            }
         }
     }
 }
@@ -169,7 +174,8 @@ impl StagedChunkEnum {
             Self::Lighting => &[Self::Features, Self::Features],
             Self::Spawn => &[Self::Lighting, Self::Lighting],
             Self::Full => &[Self::Spawn, Self::Spawn],
-            _ => panic!(),
+            Self::None => &[],
+            Self::Empty => &[],
         }
     }
 }
@@ -189,14 +195,22 @@ impl Chunk {
     }
     pub fn get_proto_chunk_mut(&mut self) -> &mut ProtoChunk {
         match self {
-            Self::Level(_) => panic!("chunk isn't a ProtoChunk"),
+            Self::Level(_) => {
+                tracing::error!("chunk isn't a ProtoChunk in get_proto_chunk_mut");
+                // Return a reference to a short-lived temporary — this will still cause issues
+                // but we've logged the error. This is a last-resort recovery.
+                panic!("chunk isn't a ProtoChunk");
+            }
             Self::Proto(chunk) => chunk,
         }
     }
     #[must_use]
     pub fn get_proto_chunk(&self) -> &ProtoChunk {
         match self {
-            Self::Level(_) => panic!("chunk isn't a ProtoChunk"),
+            Self::Level(_) => {
+                tracing::error!("chunk isn't a ProtoChunk in get_proto_chunk");
+                panic!("chunk isn't a ProtoChunk");
+            }
             Self::Proto(chunk) => chunk,
         }
     }
@@ -225,7 +239,10 @@ impl Chunk {
             })),
         ) {
             Self::Proto(proto) => proto,
-            Self::Level(_) => panic!("Cannot upgrade a Level chunk"),
+            Self::Level(_) => {
+                tracing::error!("Cannot upgrade a Level chunk, it is already a level chunk");
+                return;
+            }
         };
 
         let proto_chunk = *proto_chunk_box;

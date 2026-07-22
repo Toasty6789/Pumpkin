@@ -1,0 +1,281 @@
+# =============================================================================
+# Release Pipeline
+# =============================================================================
+#
+# Three-stage release pipeline for Pumpkin 1.0.0:
+#
+#   Alpha  — Cross-platform compilation verification + unit tests
+#            Triggered on every push/PR to release branches.
+#   Beta   — Full clippy, integration tests, and benchmarks.
+#            Triggered when a release candidate tag (rc-*) is pushed.
+#   Final  — Release build, artifact packaging, and publish to GitHub
+#            Releases. Triggered by the v1.0.0 tag.
+#
+# =============================================================================
+
+name: Release Pipeline
+
+on:
+  push:
+    branches: [master, main, develop, release/*]
+    tags:
+      - "v*"
+      - "rc-*"
+  pull_request:
+    branches: [release/*]
+  workflow_dispatch:
+    inputs:
+      stage:
+        description: "Release stage to run"
+        required: true
+        default: "alpha"
+        type: choice
+        options:
+          - alpha
+          - beta
+          - final
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_REGISTRIES_CRATES_IO_PROTOCOL: sparse
+
+jobs:
+  # ═════════════════════════════════════════════════════════════════════════
+  # ALPHA STAGE: Cross-platform check + test
+  # ═════════════════════════════════════════════════════════════════════════
+  alpha-check:
+    name: Alpha — cargo check
+    if: |
+      github.event_name == 'push' || github.event_name == 'pull_request' ||
+      (github.event_name == 'workflow_dispatch' && inputs.stage == 'alpha')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+      - name: Install Rust
+        run: rustup update stable && rustup default stable
+      - uses: Swatinem/rust-cache@v2
+      - name: cargo check
+        run: cargo check --all-targets --all-features
+
+  alpha-test-linux:
+    name: Alpha — test (Linux)
+    if: |
+      github.event_name == 'push' || github.event_name == 'pull_request' ||
+      (github.event_name == 'workflow_dispatch' && inputs.stage == 'alpha')
+    runs-on: ubuntu-latest
+    needs: [alpha-check]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+      - name: Install Rust
+        run: rustup update stable && rustup default stable
+      - uses: Swatinem/rust-cache@v2
+      - name: cargo test
+        run: cargo test --all-features --verbose
+
+  alpha-test-windows:
+    name: Alpha — test (Windows)
+    if: |
+      github.event_name == 'push' || github.event_name == 'pull_request' ||
+      (github.event_name == 'workflow_dispatch' && inputs.stage == 'alpha')
+    runs-on: windows-latest
+    needs: [alpha-check]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+      - name: Install Rust
+        run: rustup update stable && rustup default stable
+      - uses: Swatinem/rust-cache@v2
+      - name: cargo test
+        run: cargo test --all-features --verbose
+
+  alpha-test-macos:
+    name: Alpha — test (macOS)
+    if: |
+      github.event_name == 'push' || github.event_name == 'pull_request' ||
+      (github.event_name == 'workflow_dispatch' && inputs.stage == 'alpha')
+    runs-on: macos-latest
+    needs: [alpha-check]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+      - name: Install Rust
+        run: rustup update stable && rustup default stable
+      - uses: Swatinem/rust-cache@v2
+      - name: cargo test
+        run: cargo test --all-features --verbose
+
+  # ═════════════════════════════════════════════════════════════════════════
+  # BETA STAGE: Full clippy, integration tests, and benchmarks
+  # ═════════════════════════════════════════════════════════════════════════
+  beta-clippy:
+    name: Beta — clippy (deny warnings)
+    if: |
+      startsWith(github.ref, 'refs/tags/rc-') ||
+      (github.event_name == 'workflow_dispatch' && inputs.stage == 'beta')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+      - name: Install Rust
+        run: |
+          rustup update stable && rustup default stable
+          rustup component add clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: cargo clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+  beta-test-full:
+    name: Beta — full test suite
+    if: |
+      startsWith(github.ref, 'refs/tags/rc-') ||
+      (github.event_name == 'workflow_dispatch' && inputs.stage == 'beta')
+    runs-on: ubuntu-latest
+    needs: [beta-clippy]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+      - name: Install Rust
+        run: rustup update stable && rustup default stable
+      - uses: Swatinem/rust-cache@v2
+      - name: cargo test (all features)
+        run: cargo test --all-features --verbose
+      - name: cargo test (doc)
+        run: cargo test --doc --verbose
+
+  beta-benches:
+    name: Beta — benchmarks (smoke)
+    if: |
+      startsWith(github.ref, 'refs/tags/rc-') ||
+      (github.event_name == 'workflow_dispatch' && inputs.stage == 'beta')
+    runs-on: ubuntu-latest
+    needs: [beta-clippy]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+      - name: Install Rust
+        run: rustup update stable && rustup default stable
+      - uses: Swatinem/rust-cache@v2
+      - name: cargo bench (smoke test — one iteration)
+        run: cargo bench --all-features -- --warm-up-time 1 --measurement-time 1
+
+  # ═════════════════════════════════════════════════════════════════════════
+  # FINAL STAGE: Release build + publish
+  # ═════════════════════════════════════════════════════════════════════════
+  final-build:
+    name: Final — release build
+    if: |
+      startsWith(github.ref, 'refs/tags/v') ||
+      (github.event_name == 'workflow_dispatch' && inputs.stage == 'final')
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            suffix: ""
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            suffix: ""
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            suffix: .exe
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            suffix: ""
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+            suffix: ""
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - name: Install Rust
+        run: rustup update stable && rustup default stable
+
+      - name: Add target
+        run: rustup target add ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build release binary
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Prepare artifact
+        shell: bash
+        run: |
+          mkdir -p dist
+          BIN="target/${{ matrix.target }}/release/pumpkin${{ matrix.suffix }}"
+          if [ -f "$BIN" ]; then
+            cp "$BIN" "dist/pumpkin-${{ matrix.target }}${{ matrix.suffix }}"
+          else
+            echo "Binary not found at $BIN" >&2
+            exit 1
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: pumpkin-${{ matrix.target }}
+          compression-level: 9
+          path: dist/pumpkin-*
+
+  final-publish:
+    name: Final — publish release
+    if: |
+      (startsWith(github.ref, 'refs/tags/v') && github.event_name == 'push') ||
+      (github.event_name == 'workflow_dispatch' && inputs.stage == 'final')
+    runs-on: ubuntu-latest
+    needs: [final-build]
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v8
+        with:
+          path: dist/
+          merge-multiple: true
+
+      - name: Generate release notes
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "# Pumpkin $VERSION" > dist/RELEASE.md
+          echo "" >> dist/RELEASE.md
+          echo "## Downloads" >> dist/RELEASE.md
+          echo "" >> dist/RELEASE.md
+          for f in dist/pumpkin-*; do
+            BASENAME=$(basename "$f")
+            if [ "$BASENAME" != "RELEASE.md" ]; then
+              SHA=$(sha256sum "$f" | cut -d' ' -f1)
+              echo "- \`$BASENAME\` — SHA256: \`$SHA\`" >> dist/RELEASE.md
+            fi
+          done
+          echo "" >> dist/RELEASE.md
+          echo "---" >> dist/RELEASE.md
+          echo "From commit: \`$(git rev-parse --short HEAD)\`" >> dist/RELEASE.md
+          echo "Generated on: $(date -u +"%Y-%m-%d %H:%M") UTC" >> dist/RELEASE.md
+          cat dist/RELEASE.md
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: "Pumpkin ${{ github.ref_name }}"
+          body_path: dist/RELEASE.md
+          files: dist/pumpkin-*
+          draft: false
+          prerelease: false

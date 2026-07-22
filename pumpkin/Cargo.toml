@@ -86,6 +86,8 @@ time = { workspace = true, features = ["parsing", "macros", "local-offset"] }
 
 # plugins
 libloading.workspace = true
+# Shared repr(C) types for native plugin authors
+pumpkin-plugin-api = { workspace = true, default-features = false, features = ["native"] }
 rustc-hash.workspace = true
 
 # Task handling
@@ -114,7 +116,16 @@ image = { version = "0.25.10", default-features = false, features = ["png"] }
 indexmap.workspace = true
 
 [dev-dependencies]
+criterion = { workspace = true, features = ["html_reports", "async_tokio"] }
 tempfile.workspace = true
+
+[[bench]]
+name = "tick_bench"
+harness = false
+
+[[bench]]
+name = "player_stress"
+harness = false
 
 [features]
 console-subscriber = ["dep:console-subscriber"]

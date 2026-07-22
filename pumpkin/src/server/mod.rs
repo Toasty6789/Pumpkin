@@ -54,6 +54,7 @@ use tokio_util::task::TaskTracker;
 
 mod connection_cache;
 mod key_store;
+pub mod leak_detector;
 pub mod recipe;
 pub mod scheduler;
 pub mod seasonal_events;

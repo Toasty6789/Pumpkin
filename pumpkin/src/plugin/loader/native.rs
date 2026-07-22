@@ -1,56 +1,62 @@
+//! Native plugin loader — loads compiled dynamic-library plugins via
+//! `libloading`, validates API version compatibility, and wraps them in
+//! [`NativePluginHandle`] for safe interaction.
+//!
+//! ## C-ABI contract
+//!
+//! Every native plugin **must** expose the following `#[no_mangle]` symbols:
+//!
+//! | Symbol | Type | Required | Description |
+//! |--------|------|----------|-------------|
+//! | `PUMPKIN_API_VERSION` | `*const u32` | ✓ | Packed API version `(major<<22 \| minor<<12 \| patch)` |
+//! | `PUMPKIN_PLUGIN_VTABLE` | `*const PluginVTable` | ✓ | Main vtable with all lifecycle hooks |
+//!
+//! The simplest way to produce these is via the
+//! [`declare_native_plugin!`](pumpkin_plugin_api::declare_native_plugin!) macro.
+
 use std::any::Any;
+use std::path::Path;
+use std::sync::Arc;
 
 use libloading::Library;
 
-use crate::plugin::{
-    PLUGIN_API_VERSION,
-    loader::{PluginLoadFuture, PluginUnloadFuture},
-};
+use crate::plugin::api::native_api::NativePluginHandle;
+use crate::plugin::loader::{LoaderError, PluginLoadFuture, PluginLoader, PluginUnloadFuture};
+use crate::plugin::{Plugin, PluginMetadata};
 
-use super::{LoaderError, Path, Plugin, PluginLoader, PluginMetadata};
-
+/// Loader for native (compiled dynamic library) plugins.
 pub struct NativePluginLoader;
 
 impl PluginLoader for NativePluginLoader {
     fn load<'a>(&'a self, path: &'a Path) -> PluginLoadFuture<'a> {
-        Box::pin(async {
+        Box::pin(async move {
             let path = path.to_owned();
 
-            let library = unsafe { Library::new(&path) }
-                .map_err(|e| LoaderError::LibraryLoad(e.to_string()))?;
+            // Open the dynamic library.
+            let library = unsafe {
+                Library::new(&path).map_err(|e| LoaderError::LibraryLoad(e.to_string()))?
+            };
+            let library = Arc::new(library);
 
-            // Ensure this plugin was built against a compatible Pumpkin plugin API version
-            let plugin_api_version = unsafe {
-                match library.get::<*const u32>(b"PUMPKIN_API_VERSION") {
-                    Ok(symbol) => **symbol,
-                    Err(_) => return Err(LoaderError::ApiVersionMissing),
-                }
+            // Use NativePluginHandle to validate and load the vtable-based plugin.
+            let handle = unsafe {
+                NativePluginHandle::load(library.clone())
+                    .map_err(|e| LoaderError::InitializationFailed(e))?
             };
 
-            if plugin_api_version != PLUGIN_API_VERSION {
-                return Err(LoaderError::ApiVersionMismatch {
-                    plugin_version: plugin_api_version,
-                    server_version: PLUGIN_API_VERSION,
-                });
-            }
-
-            // 2. Extract Metadata (METADATA)
-            let metadata = unsafe {
-                &**library
-                    .get::<*const PluginMetadata>(b"METADATA")
-                    .map_err(|_| LoaderError::MetadataMissing)?
+            // Build an adapter that turns the vtable plugin into the server's
+            // internal Plugin trait so the rest of the plugin pipeline works
+            // transparently.
+            let plugin = NativePluginAdapter {
+                metadata: handle.metadata.clone(),
+                handle,
             };
 
-            // 3. Extract Plugin Factory (plugin)
-            let plugin_factory = unsafe {
-                library
-                    .get::<fn() -> Box<dyn Plugin>>(b"plugin")
-                    .map_err(|_| LoaderError::EntrypointMissing)?
-            };
+            let metadata_for_loader = MetadataForLoader::from(&plugin.metadata);
 
             Ok((
-                plugin_factory(),
-                metadata.clone(),
+                Box::new(plugin) as Box<dyn Plugin>,
+                metadata_for_loader.into_server_metadata(),
                 Box::new(library) as Box<dyn Any + Send + Sync>,
             ))
         })
@@ -70,16 +76,85 @@ impl PluginLoader for NativePluginLoader {
 
     fn unload(&self, data: Box<dyn Any + Send + Sync>) -> PluginUnloadFuture<'_> {
         Box::pin(async {
-            data.downcast::<Library>()
-                .map_or(Err(LoaderError::InvalidLoaderData), |library| {
-                    drop(library);
-                    Ok(())
-                })
+            let _library = data
+                .downcast::<Arc<Library>>()
+                .map_err(|_| LoaderError::InvalidLoaderData)?;
+            // Dropping the Arc will close the library when all references are gone.
+            drop(_library);
+            Ok(())
         })
     }
 
-    /// Windows specific issue: Windows locks DLLs, so we must indicate they cannot be unloaded.
+    /// Windows locks loaded DLLs, so we cannot safely unload them.
     fn can_unload(&self) -> bool {
         !cfg!(target_os = "windows")
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Adapter: wraps a NativePluginHandle as a server-side Plugin trait object
+// ---------------------------------------------------------------------------
+
+/// Adapts a [`NativePluginHandle`] to the server's internal [`Plugin`] trait.
+///
+/// This lets the existing plugin pipeline (event dispatch, command
+/// registration, lifecycle) work with vtable-based native plugins without
+/// any changes.
+struct NativePluginAdapter {
+    metadata: PluginMetadata,
+    handle: NativePluginHandle,
+}
+
+// Safety: NativePluginHandle is Send + Sync.
+unsafe impl Send for NativePluginAdapter {}
+unsafe impl Sync for NativePluginAdapter {}
+
+impl Plugin for NativePluginAdapter {
+    fn on_load(&mut self, _server: Arc<crate::plugin::api::Context>) -> crate::plugin::api::PluginFuture<'_, Result<(), String>> {
+        // The vtable's init was already called during NativePluginHandle::load.
+        Box::pin(async move { Ok(()) })
+    }
+
+    fn on_unload(&mut self, _server: Arc<crate::plugin::api::Context>) -> crate::plugin::api::PluginFuture<'_, Result<(), String>> {
+        self.handle.shutdown("plugin unloaded");
+        Box::pin(async move { Ok(()) })
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Temporary metadata representation for the loader pipeline
+// ---------------------------------------------------------------------------
+
+/// Minimal metadata struct matching the shape the loader pipeline expects.
+struct MetadataForLoader {
+    name: String,
+    version: String,
+    authors: Vec<String>,
+    description: String,
+    dependencies: Vec<String>,
+    permissions: Vec<String>,
+}
+
+impl MetadataForLoader {
+    fn from(m: &PluginMetadata) -> Self {
+        Self {
+            name: m.name.clone(),
+            version: m.version.clone(),
+            authors: m.authors.clone(),
+            description: m.description.clone(),
+            dependencies: m.dependencies.clone(),
+            permissions: m.permissions.clone(),
+        }
+    }
+
+    fn into_server_metadata(self) -> PluginMetadata {
+        PluginMetadata {
+            name: self.name,
+            version: self.version,
+            authors: self.authors,
+            description: self.description,
+            dependencies: self.dependencies,
+            permissions: self.permissions,
+        }
     }
 }

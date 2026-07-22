@@ -38,6 +38,14 @@ pub mod ruined_portal;
 pub mod shipwreck;
 pub mod stronghold;
 pub mod swamp_hut;
+pub mod ancient_city;
+pub mod bastion_remnant;
+pub mod pillager_outpost;
+pub mod trail_ruins;
+pub mod trial_chambers;
+pub mod village;
+pub mod overworld_fossil;
+pub mod desert_well;
 
 pub trait BlockRandomizer {
     fn get_block(&self, rng: &mut RandomGenerator, is_border: bool) -> &BlockState;

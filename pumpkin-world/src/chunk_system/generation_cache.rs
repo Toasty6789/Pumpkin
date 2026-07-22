@@ -28,7 +28,10 @@ impl HeightLimitView for Cache {
         let mid = ((self.size * self.size) >> 1) as usize;
         match &self.chunks[mid] {
             Chunk::Proto(chunk) => chunk.height(),
-            Chunk::Level(_) => panic!(),
+            Chunk::Level(_) => {
+                tracing::error!("Level chunk found in generation cache at center");
+                0
+            }
         }
     }
 
@@ -36,7 +39,10 @@ impl HeightLimitView for Cache {
         let mid = ((self.size * self.size) >> 1) as usize;
         match &self.chunks[mid] {
             Chunk::Proto(chunk) => chunk.bottom_y(),
-            Chunk::Level(_) => panic!(),
+            Chunk::Level(_) => {
+                tracing::error!("Level chunk found in generation cache at center");
+                0
+            }
         }
     }
 }
@@ -361,7 +367,9 @@ impl Cache {
             Chunk::Proto(_) => {}
         }
         match stage {
-            StagedChunkEnum::Empty => panic!("empty stage"),
+            StagedChunkEnum::Empty => {
+                tracing::error!("Cannot advance to Empty stage");
+            }
             StagedChunkEnum::StructureStart => match generator {
                 generator::WorldGenerator::Noise(noise_gen) => {
                     self.chunks[mid]

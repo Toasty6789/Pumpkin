@@ -4,7 +4,11 @@
 //! to WebAssembly. A plugin consists of a type that implements [`Plugin`], registered
 //! with the [`register_plugin!`] macro.
 //!
-//! # Quick start
+//! When the `native` feature is enabled (the default), this crate also provides
+//! the [`native`] module for writing C-ABI native plugins that are loaded via
+//! `libloading`.
+//!
+//! # Quick start (WASM)
 //!
 //! ```rust,ignore
 //! use pumpkin_plugin_api::{Plugin, PluginMetadata, Context, register_plugin, permissions::permissions};
@@ -27,6 +31,30 @@
 //!
 //! register_plugin!(MyPlugin);
 //! ```
+//!
+//! # Quick start (Native / C-ABI)
+//!
+//! ```rust,ignore
+//! use pumpkin_plugin_api::native::prelude::*;
+//!
+//! struct MyNativePlugin;
+//!
+//! impl NativePlugin for MyNativePlugin {
+//!     fn metadata() -> PluginMetadata {
+//!         PluginMetadata {
+//!             name: c"my-native-plugin".as_ptr(),
+//!             version: c"0.1.0".as_ptr(),
+//!             authors: c"you".as_ptr(),
+//!             description: c"An example native plugin.".as_ptr(),
+//!             dependencies: c"".as_ptr(),
+//!             permissions: c"".as_ptr(),
+//!             api_version: PluginApiVersion::CURRENT,
+//!         }
+//!     }
+//! }
+//!
+//! declare_native_plugin!(MyNativePlugin);
+//! ```
 
 use crate::{
     commands::COMMAND_HANDLERS, events::EVENT_HANDLERS, logging::WitSubscriber,
@@ -41,6 +69,13 @@ pub mod forms;
 /// Use these in your `PluginMetadata` to request access to specific host features.
 pub mod permissions;
 pub mod scheduler;
+
+#[cfg(feature = "native")]
+/// C-ABI native plugin API (requires the `native` feature, enabled by default).
+///
+/// This module provides `#[repr(C)]` types, the [`PluginVTable`], and the
+/// [`declare_native_plugin!`] macro for writing compiled dynamic-library plugins.
+pub mod native;
 
 pub mod command {
     pub use crate::wit::pumpkin::plugin::command::{

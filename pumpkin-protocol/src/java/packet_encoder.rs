@@ -100,6 +100,12 @@ impl<W: AsyncWrite + Unpin> TCPNetworkEncoder<W> {
         }
     }
 
+    fn get_writer(&mut self) -> Result<&mut EncryptionWriter<W>, PacketEncodeError> {
+        self.writer.as_mut().ok_or_else(|| {
+            PacketEncodeError::Message("Writer not initialized".into())
+        })
+    }
+
     pub const fn set_compression(
         &mut self,
         compression_info: (CompressionThreshold, CompressionLevel),
@@ -245,17 +251,16 @@ impl<W: AsyncWrite + Unpin> TCPNetworkEncoder<W> {
                 }
 
                 full_packet_len_var_int
-                    .encode_async(self.writer.as_mut().unwrap())
+                    .encode_async(self.get_writer()?)
                     .await
                     .map_err(|err| PacketEncodeError::Message(err.to_string()))?;
                 data_len_var_int
-                    .encode_async(self.writer.as_mut().unwrap())
+                    .encode_async(self.get_writer()?)
                     .await
                     .map_err(|err| PacketEncodeError::Message(err.to_string()))?;
-                self.writer
-                    .as_mut()
-                    .unwrap()
-                    .write_all(&self.compression_scratch)
+                let scratch = self.compression_scratch.clone();
+                self.get_writer()?
+                    .write_all(&scratch)
                     .await
                     .map_err(|err| PacketEncodeError::Message(err.to_string()))?;
             } else {
@@ -279,16 +284,14 @@ impl<W: AsyncWrite + Unpin> TCPNetworkEncoder<W> {
                 }
 
                 full_packet_len_var_int
-                    .encode_async(self.writer.as_mut().unwrap())
+                    .encode_async(self.get_writer()?)
                     .await
                     .map_err(|err| PacketEncodeError::Message(err.to_string()))?;
                 data_len_var_int
-                    .encode_async(self.writer.as_mut().unwrap())
+                    .encode_async(self.get_writer()?)
                     .await
                     .map_err(|err| PacketEncodeError::Message(err.to_string()))?;
-                self.writer
-                    .as_mut()
-                    .unwrap()
+                self.get_writer()?
                     .write_all(&packet_data)
                     .await
                     .map_err(|err| PacketEncodeError::Message(err.to_string()))?;
@@ -306,12 +309,10 @@ impl<W: AsyncWrite + Unpin> TCPNetworkEncoder<W> {
             }
 
             full_packet_len_var_int
-                .encode_async(self.writer.as_mut().unwrap())
+                .encode_async(self.get_writer()?)
                 .await
                 .map_err(|err| PacketEncodeError::Message(err.to_string()))?;
-            self.writer
-                .as_mut()
-                .unwrap()
+            self.get_writer()?
                 .write_all(&packet_data)
                 .await
                 .map_err(|err| PacketEncodeError::Message(err.to_string()))?;
@@ -321,9 +322,7 @@ impl<W: AsyncWrite + Unpin> TCPNetworkEncoder<W> {
     }
 
     pub async fn flush(&mut self) -> Result<(), PacketEncodeError> {
-        self.writer
-            .as_mut()
-            .unwrap()
+        self.get_writer()?
             .flush()
             .await
             .map_err(|err| PacketEncodeError::Message(err.to_string()))
