@@ -377,7 +377,7 @@ impl LivingEntity {
         attribute: &Attributes,
         f: F,
     ) {
-        let mut map = self.attributes.write().unwrap();
+        let mut map = self.attributes.write().unwrap_or_else(|e| e.into_inner());
 
         let inst = map.entry(attribute.id).or_insert_with(|| {
             let base = self
@@ -408,7 +408,7 @@ impl LivingEntity {
     /// Returns the computed value for `attribute` using the local instance, falling back
     /// to `attribute.default_value` if no local instance exists.
     pub fn get_attribute_value(&self, attribute: &Attributes) -> f64 {
-        let map = self.attributes.read().unwrap();
+        let map = self.attributes.read().unwrap_or_else(|e| e.into_inner());
         map.get(&attribute.id)
             .map_or(attribute.default_value, AttributeInstance::value)
     }
@@ -416,7 +416,7 @@ impl LivingEntity {
     /// Returns the base attribute value for `attribute` for this entity's type.
     pub fn get_attribute_base(&self, attribute: &Attributes) -> f64 {
         // Check the local base value first (could be modified)
-        let map = self.attributes.read().unwrap();
+        let map = self.attributes.read().unwrap_or_else(|e| e.into_inner());
         if let Some(instance) = map.get(&attribute.id) {
             return instance.base_value;
         }
@@ -426,15 +426,15 @@ impl LivingEntity {
             .entity_type
             .attributes
             .iter()
-            .find(|a| a.0.id == attribute.id)
-            .unwrap()
-            .1
+                        .find(|a| a.0.id == attribute.id)
+                        .expect("attribute should exist for entity type")
+                        .1
     }
 
     /// Update or insert the base value for an attribute on this entity.
     /// If the attribute doesn't exist locally yet, it will be inserted.
     pub fn set_attribute_base(&self, attribute: &Attributes, new_base: f64) {
-        let mut map = self.attributes.write().unwrap();
+        let mut map = self.attributes.write().unwrap_or_else(|e| e.into_inner());
         if let Some(inst) = map.get_mut(&attribute.id) {
             inst.base_value = new_base;
             inst.dirty.store(true, Ordering::Relaxed);
@@ -1800,9 +1800,9 @@ impl LivingEntity {
         }
         // TODO: this is wrong
         let slot = self
-            .equipment_slots
-            .get(&PlayerInventory::OFF_HAND_SLOT)
-            .unwrap();
+            equipment_slots
+                        .get(&PlayerInventory::OFF_HAND_SLOT)
+                        .expect("off-hand slot should exist");
         self.entity_equipment.lock().await.get(slot)
     }
 
@@ -1820,9 +1820,9 @@ impl LivingEntity {
     /// getOffHandStack in source
     pub async fn off_hand_item(&self) -> Arc<Mutex<ItemStack>> {
         let slot = self
-            .equipment_slots
-            .get(&PlayerInventory::OFF_HAND_SLOT)
-            .unwrap();
+            equipment_slots
+                        .get(&PlayerInventory::OFF_HAND_SLOT)
+                        .expect("off-hand slot should exist");
         self.entity_equipment.lock().await.get(slot)
     }
 
@@ -2019,7 +2019,7 @@ impl NBTStorage for LivingEntity {
                                 warn!("Unable to read effect from nbt");
                                 continue;
                             }
-                            let mut effect = effect.unwrap();
+                            let mut effect = effect.expect("effect should not be None (checked above)");
                             effect.blend = true; // TODO: change, is taken from effect give command
                             active_effects.insert(effect.effect_type, effect);
                         }
@@ -2337,7 +2337,7 @@ impl EntityBase for LivingEntity {
             self.last_damage_taken.store(amount);
             let damage_amount = damage_amount.max(0.0);
 
-            let config = &world.server.upgrade().unwrap().advanced_config.pvp;
+            let config = &world.server.upgrade().expect("server reference alive").advanced_config.pvp;
 
             if config.hurt_animation {
                 let entity_id = self.entity.entity_id;

@@ -242,7 +242,7 @@ impl ChunkManager {
         let old_view_distance = self.view_distance;
 
         {
-            let mut lock = level.chunk_loading.lock().unwrap();
+            let mut lock = level.chunk_loading.lock().unwrap_or_else(|e| e.into_inner());
             let new_level = ChunkLoading::get_level_from_view_distance(view_distance);
             lock.add_ticket(center, new_level);
 
@@ -296,7 +296,7 @@ impl ChunkManager {
     }
 
     pub fn clean_up(&mut self, level: &Arc<Level>) {
-        let mut lock = level.chunk_loading.lock().unwrap();
+        let mut lock = level.chunk_loading.lock().unwrap_or_else(|e| e.into_inner());
         lock.remove_ticket(
             self.center,
             ChunkLoading::get_level_from_view_distance(self.view_distance),
@@ -315,7 +315,7 @@ impl ChunkManager {
     }
 
     pub fn change_world(&mut self, old_level: &Arc<Level>, new_world: Arc<World>) {
-        let mut lock = old_level.chunk_loading.lock().unwrap();
+        let mut lock = old_level.chunk_loading.lock().unwrap_or_else(|e| e.into_inner());
         lock.remove_ticket(
             self.center,
             ChunkLoading::get_level_from_view_distance(self.view_distance),
@@ -581,7 +581,7 @@ impl Player {
 
         impl ScreenHandlerListener for ScreenListener {}
 
-        let server = world.server.upgrade().unwrap();
+        let server = world.server.upgrade().expect("server reference alive");
 
         let player_uuid = gameprofile.id;
 
@@ -608,7 +608,7 @@ impl Player {
                 &inventory,
                 None,
                 0,
-                Some(world.server.upgrade().unwrap().recipe_manager.clone()),
+                Some(world.server.upgrade().expect("server reference alive").recipe_manager.clone()),
             )
             .await,
         ));
@@ -666,8 +666,8 @@ impl Player {
             watched_section: AtomicCell::new(Cylindrical::new(
                 Vector2::new(0, 0),
                 // Since 1 is not possible in vanilla it is used as uninit
-                NonZeroU8::new(1).unwrap(),
-            )),
+                NonZeroU8::new(1).expect("1 is non-zero"),
+                            )),
             last_action_time: AtomicCell::new(std::time::Instant::now()),
             ping: AtomicU32::new(0),
             last_attacked_ticks: AtomicU32::new(0),
@@ -909,7 +909,7 @@ impl Player {
     #[expect(clippy::too_many_lines)]
     pub async fn attack(&self, victim: Arc<dyn EntityBase>) {
         let world = self.world();
-        let server = world.server.upgrade().unwrap();
+        let server = world.server.upgrade().expect("server reference alive");
         let victim_entity = victim.get_entity();
         let attacker_entity = &self.living_entity.entity;
         let config = &server.advanced_config.pvp;
@@ -2472,8 +2472,8 @@ impl Player {
 
         self.watched_section.store(Cylindrical::new(
             Vector2::new(0, 0),
-            NonZeroU8::new(1).unwrap(),
-        ));
+            NonZeroU8::new(1).expect("1 is non-zero"),
+                    ));
     }
 
     /// Teleports the player to a different world or dimension with an optional position, yaw, and pitch.
@@ -2488,7 +2488,7 @@ impl Player {
         let yaw = yaw.unwrap_or(new_world.level_info.load().spawn_yaw);
         let pitch = pitch.unwrap_or(new_world.level_info.load().spawn_pitch);
 
-        let server = new_world.server.upgrade().unwrap();
+        let server = new_world.server.upgrade().expect("server reference alive");
 
         send_cancellable! {{
             server;
@@ -2510,7 +2510,7 @@ impl Player {
                 let new_world = event.new_world;
 
                 self.set_client_loaded(false);
-                let player = current_world.remove_player(self, false).await.unwrap();
+                let player = current_world.remove_player(self, false).await.expect("player should exist in current world");
                new_world.players.rcu(|current_list| {
                     let mut new_list = (**current_list).clone();
                     new_list.push(player.clone());
@@ -2602,7 +2602,7 @@ impl Player {
         // This is the ultra special magic code used to create the teleport id
         // This returns the old value
         // This operation wraps around on overflow.
-        let server = self.world().server.upgrade().unwrap();
+        let server = self.world().server.upgrade().expect("server reference alive");
         send_cancellable! {{
             server;
             PlayerTeleportEvent {
@@ -2896,7 +2896,7 @@ impl Player {
         if self.gamemode.load() == gamemode {
             return false;
         }
-        let server = self.world().server.upgrade().unwrap();
+        let server = self.world().server.upgrade().expect("server reference alive");
         send_cancellable! {{
             server;
             PlayerGamemodeChangeEvent {
@@ -4544,7 +4544,7 @@ impl EntityBase for Player {
                 // Same world
                 let yaw = yaw.unwrap_or(self.living_entity.entity.yaw.load());
                 let pitch = pitch.unwrap_or(self.living_entity.entity.pitch.load());
-                let server = self.world().server.upgrade().unwrap();
+                let server = self.world().server.upgrade().expect("server reference alive");
                 send_cancellable! {{
                     server;
                     PlayerTeleportEvent {

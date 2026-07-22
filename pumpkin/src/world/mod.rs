@@ -269,7 +269,7 @@ impl World {
                 chunk
                     .heightmap
                     .lock()
-                    .unwrap()
+                    .unwrap_or_else(|e| e.into_inner())
                     .get(height_map, x, z, self.min_y)
             })
             .await
@@ -1006,7 +1006,7 @@ impl World {
             block_entity_future
         );
 
-        self.level.chunk_loading.lock().unwrap().send_change();
+        self.level.chunk_loading.lock().unwrap_or_else(|e| e.into_inner()).send_change();
 
         if let Some(ref fight_mutex) = self.dragon_fight {
             dragon_fight::DragonFight::tick(fight_mutex, self).await;
@@ -1635,7 +1635,7 @@ impl World {
             let delta = Vector3::new(rand_value & 15, rand_value >> 16 & 15, rand_value >> 8 & 15);
             let random_pos = Vector3::new(
                 chunk_pos.x << 4,
-                chunk.heightmap.lock().unwrap().get(
+                chunk.heightmap.lock().unwrap_or_else(|e| e.into_inner()).get(
                     MotionBlocking,
                     chunk_pos.x << 4,
                     chunk_pos.y << 4,
@@ -1734,7 +1734,7 @@ impl World {
 
         self.level
             .read_chunk_sync(&chunk_pos, |chunk| {
-                let height = chunk.heightmap.lock().unwrap().get(
+                let height = chunk.heightmap.lock().unwrap_or_else(|e| e.into_inner()).get(
                     ChunkHeightmapType::WorldSurface,
                     position.x,
                     position.y,
@@ -1765,10 +1765,10 @@ impl World {
         self.level
             .read_chunk_sync(&chunk_pos, |chunk| {
                 chunk
-                    .heightmap
-                    .lock()
-                    .unwrap()
-                    .get(height_map, x, z, self.min_y)
+                                    .heightmap
+                                    .lock()
+                                    .unwrap_or_else(|e| e.into_inner())
+                                    .get(height_map, x, z, self.min_y)
             })
             .unwrap_or(self.min_y)
     }
@@ -2417,7 +2417,7 @@ impl World {
                 config.skin_parts,
             );
             meta.write(&mut java_meta_buf, &JavaMinecraftVersion::V_1_21_4)
-                .unwrap();
+                            .expect("metadata write to buffer should not fail");
         };
         java_meta_buf.put_u8(255);
 
@@ -2552,7 +2552,7 @@ impl World {
                     .java
                     .max_players
                     .try_into()
-                    .unwrap(),
+                                        .expect("max_players should fit in i32"),
                 server
                     .advanced_config
                     .networking
@@ -2863,7 +2863,7 @@ impl World {
                 config.skin_parts,
             );
             meta.write(&mut java_meta_buf, &JavaMinecraftVersion::V_1_21_4)
-                .unwrap();
+                            .expect("metadata write to buffer should not fail");
         };
         java_meta_buf.put_u8(255);
 
@@ -3011,7 +3011,7 @@ impl World {
                         MetaDataType::BYTE,
                         config.skin_parts,
                     );
-                    meta.write(&mut buf, &client.version.load()).unwrap();
+                    meta.write(&mut buf, &client.version.load()).expect("metadata write to buffer should not fail");
                 };
                 drop(config);
                 // END
@@ -3883,7 +3883,7 @@ impl World {
                     .load()
                     .squared_distance_to_vec(&pos)
                     .partial_cmp(&b.get_entity().pos.load().squared_distance_to_vec(&pos))
-                    .unwrap()
+                                        .expect("float comparison should not fail for distances")
             })
             .cloned()
     }
@@ -3930,7 +3930,7 @@ impl World {
                     .load()
                     .squared_distance_to_vec(&pos)
                     .partial_cmp(&b.1.get_entity().pos.load().squared_distance_to_vec(&pos))
-                    .unwrap()
+                                        .expect("float comparison should not fail for distances")
             })
             .map(|p| p.1.clone())
     }
@@ -4094,9 +4094,9 @@ impl World {
                 let event = PlayerLeaveEvent::new(player.clone(), msg_comp);
 
                 let event = self
-                    .server
-                    .upgrade()
-                    .unwrap()
+                    server
+                                        .upgrade()
+                                        .expect("server reference should still be alive")
                     .plugin_manager
                     .fire(event)
                     .await;
@@ -4491,9 +4491,9 @@ impl World {
         );
 
         let event = self
-            .server
-            .upgrade()
-            .unwrap()
+            server
+                                .upgrade()
+                                .expect("server reference should still be alive")
             .plugin_manager
             .fire::<BlockBreakEvent>(event)
             .await;
@@ -4991,12 +4991,12 @@ impl World {
             .level
             .read_chunk_sync(&chunk_pos, |chunk| {
                 chunk
-                    .pending_block_entities
-                    .lock()
-                    .unwrap()
-                    .remove(block_pos)
-            })
-            .flatten()?;
+                                    .pending_block_entities
+                                    .lock()
+                                    .unwrap_or_else(|e| e.into_inner())
+                                    .remove(block_pos)
+                            })
+                            .flatten()?;
         let entity = block_entity_from_nbt(&nbt)?;
         self.block_entities
             .entry(chunk_pos)
@@ -5012,7 +5012,7 @@ impl World {
 
         if let Some(nbt) = &block_entity_nbt {
             let mut bytes = Vec::new();
-            to_bytes_unnamed(nbt, &mut bytes).unwrap();
+            to_bytes_unnamed(nbt, &mut bytes).expect("NBT serialization should not fail");
             self.broadcast_to_chunk(
                 chunk_pos,
                 &CBlockEntityData::new(
@@ -5036,10 +5036,10 @@ impl World {
         self.level
             .read_chunk_sync(&block_pos.chunk_position(), |chunk| {
                 chunk
-                    .pending_block_entities
-                    .lock()
-                    .unwrap()
-                    .insert(block_pos, nbt.clone());
+                                    .pending_block_entities
+                                    .lock()
+                                    .unwrap_or_else(|e| e.into_inner())
+                                    .insert(block_pos, nbt.clone());
                 chunk.mark_dirty(true);
             });
     }
@@ -5069,7 +5069,7 @@ impl World {
 
         if let Some(nbt) = &block_entity_nbt {
             let mut bytes = Vec::new();
-            to_bytes_unnamed(nbt, &mut bytes).unwrap();
+            to_bytes_unnamed(nbt, &mut bytes).expect("NBT serialization should not fail");
             self.broadcast_to_chunk(
                 chunk_pos,
                 &CBlockEntityData::new(
