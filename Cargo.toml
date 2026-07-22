@@ -13,7 +13,7 @@ members = [
     "pumpkin-plugin-api",
     "pumpkin-codecs"
 ]
-exclude = ["pumpkin-codegen"]
+exclude = ["pumpkin-codegen", "FabriPumk"]
 
 [workspace.lints.clippy]
 # Groups
@@ -83,9 +83,9 @@ rust-version = "1.95"
 license = "GPL-3.0"
 
 [profile.release]
-lto = true
+lto = "thin"
 strip = "debuginfo"
-codegen-units = 1
+codegen-units = 16
 
 [profile.bench]
 debug = true

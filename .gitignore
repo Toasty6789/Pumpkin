@@ -153,3 +153,16 @@ spigot.yml
 version_history.json
 world_nether/
 world_the_end/
+
+# Local parity/deployment workspaces (generated artifacts and downloaded binaries)
+.hermes/
+NewPumpkin/
+VanillaServer/
+FabriPumk/libraries/
+FabriPumk/versions/
+FabriPumk/fabric-world/
+FabriPumk/mods/
+FabriPumk/config/
+FabriPumk/logs/
+FabriPumk/.fabric/
+FabriPumk/fabric-server-launcher.properties

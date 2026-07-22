@@ -14,30 +14,21 @@
 //
 // =============================================================================
 
+use std::hint::black_box;
 use std::io::Cursor;
 
-use criterion::{
-    Criterion, BenchmarkId, Throughput,
-    black_box,
-    criterion_group, criterion_main,
-};
+use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use pumpkin_protocol::{
     ClientPacket, ServerPacket,
     codec::var_int::VarInt,
     java::{
-        client::{
-            play::CKeepAlive,
-            status::CStatusResponse,
-        },
+        client::{play::CKeepAlive, status::CStatusResponse},
         server::{
             handshake::SHandShake,
-            play::{
-                SConfirmTeleport,
-                SKeepAlive,
-            },
+            play::{SConfirmTeleport, SKeepAlive},
         },
     },
-    ser::{NetworkWriteExt, NetworkReadExt},
+    ser::NetworkWriteExt,
 };
 use pumpkin_util::version::JavaMinecraftVersion;
 
@@ -62,28 +53,22 @@ fn bench_encode_clientbound(c: &mut Criterion) {
 
     let keep_alive = CKeepAlive::new(999);
 
-    let status_response =
-        CStatusResponse::new(String::from(
-            r#"{"description":"A Pumpkin Server","players":{"max":100,"online":0},"version":{"name":"1.21.4","protocol":769}}"#,
-        ));
+    let status_response = CStatusResponse::new(String::from(
+        r#"{"description":"A Pumpkin Server","players":{"max":100,"online":0},"version":{"name":"1.21.4","protocol":769}}"#,
+    ));
 
-    for (name, packet) in [
-        ("keep_alive", &keep_alive as &dyn ClientPacket),
-        ("status_response", &status_response as &dyn ClientPacket),
-    ] {
-        group.bench_with_input(
-            BenchmarkId::new("encode", name),
-            &packet,
-            |b, pkt| {
-                b.iter(|| {
-                    let mut buf = Vec::with_capacity(256);
-                    black_box(
-                        pkt.write_packet_data(&mut buf, &BENCH_VERSION),
-                    )
-                });
-            },
-        );
-    }
+    group.bench_function(BenchmarkId::new("encode", "keep_alive"), |b| {
+        b.iter(|| {
+            let mut buf = Vec::with_capacity(16);
+            black_box(keep_alive.write_packet_data(&mut buf, &BENCH_VERSION))
+        });
+    });
+    group.bench_function(BenchmarkId::new("encode", "status_response"), |b| {
+        b.iter(|| {
+            let mut buf = Vec::with_capacity(256);
+            black_box(status_response.write_packet_data(&mut buf, &BENCH_VERSION))
+        });
+    });
 
     group.finish();
 }
@@ -134,21 +119,26 @@ fn bench_decode_serverbound(c: &mut Criterion) {
         buf.write_var_int(&VarInt(42)).unwrap();
     });
 
-    for (name, bytes) in [
-        ("keep_alive", keep_alive_bytes.as_slice()),
-        ("confirm_teleport", confirm_teleport_bytes.as_slice()),
-    ] {
-        group.bench_with_input(
-            BenchmarkId::new("decode", name),
-            &bytes,
-            |b, data| {
-                b.iter(|| {
-                    let mut cursor = Cursor::new(black_box(data));
-                    let _ = SKeepAlive::read(&mut cursor, &BENCH_VERSION);
-                })
-            },
-        );
-    }
+    group.bench_with_input(
+        BenchmarkId::new("decode", "keep_alive"),
+        &keep_alive_bytes.as_slice(),
+        |b, data| {
+            b.iter(|| {
+                let mut cursor = Cursor::new(black_box(data));
+                black_box(SKeepAlive::read(&mut cursor, &BENCH_VERSION))
+            });
+        },
+    );
+    group.bench_with_input(
+        BenchmarkId::new("decode", "confirm_teleport"),
+        &confirm_teleport_bytes.as_slice(),
+        |b, data| {
+            b.iter(|| {
+                let mut cursor = Cursor::new(black_box(data));
+                black_box(SConfirmTeleport::read(&mut cursor, &BENCH_VERSION))
+            });
+        },
+    );
 
     group.finish();
 }
