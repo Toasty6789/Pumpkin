@@ -24,12 +24,12 @@
 //! impl NativePlugin for MyFirstPlugin {
 //!     fn metadata() -> PluginMetadata {
 //!         PluginMetadata {
-//!             name: c"Example Plugin".as_ptr(),
-//!             version: c"1.0.0".as_ptr(),
-//!             authors: c"you".as_ptr(),
-//!             description: c"A minimal example.".as_ptr(),
-//!             dependencies: c"".as_ptr(),
-//!             permissions: c"".as_ptr(),
+//!             name: FfiStr::from_static("Example Plugin"),
+//!             version: FfiStr::from_static("1.0.0"),
+//!             authors: FfiStr::from_static("you"),
+//!             description: FfiStr::from_static("A minimal example."),
+//!             dependencies: FfiStr::from_static(""),
+//!             permissions: FfiStr::from_static(""),
 //!             api_version: PluginApiVersion::CURRENT,
 //!         }
 //!     }
@@ -48,8 +48,9 @@
 //! # Consistency guarantees
 //!
 //! Every public type in this module is `#[repr(C)]`.  Every exported function
-//! follows the `extern "C"` ABI.  Strings are passed as `*const c_char` with
-//! the plugin owning the backing memory for the call duration.
+//! follows the `extern "C"` ABI. Strings are passed as bounded [`types::FfiStr`]
+//! pointer-length pairs with the plugin owning the backing memory for the call
+//! duration.
 //!
 //! [`PLUGIN_API_VERSION`]: types::PluginApiVersion
 

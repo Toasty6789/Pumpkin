@@ -2,11 +2,11 @@
 //!
 //! Every type in this module is marked `#[repr(C)]` so that native plugins
 //! compiled with any Rust version or toolchain can share data across the FFI
-//! boundary.  Strings crossing the boundary are represented as `*const c_char`
-//! + explicit length pairs; the plugin library owns the backing memory for the
-//! lifetime of the query function call unless otherwise noted.
+//! boundary. Strings crossing the boundary use explicit pointer-length pairs.
+//! The plugin library owns the backing memory for the lifetime of the query
+//! function call unless otherwise noted.
 
-use core::ffi::{c_char, c_uchar, CStr};
+use core::ffi::{c_char, c_uchar};
 
 // ---------------------------------------------------------------------------
 // Versioning
@@ -33,7 +33,7 @@ pub struct PluginApiVersion {
 impl PluginApiVersion {
     /// Current API version of this server build.
     pub const CURRENT: Self = Self {
-        major: 2,
+        major: 3,
         minor: 0,
         patch: 0,
     };
@@ -51,9 +51,21 @@ impl PluginApiVersion {
     /// Useful for compact storage or wire protocols.
     #[must_use]
     pub const fn packed(&self) -> u32 {
-        let major = if self.major > 0x3FF { 0x3FF } else { self.major };
-        let minor = if self.minor > 0x3FF { 0x3FF } else { self.minor };
-        let patch = if self.patch > 0xFFF { 0xFFF } else { self.patch };
+        let major = if self.major > 0x3FF {
+            0x3FF
+        } else {
+            self.major
+        };
+        let minor = if self.minor > 0x3FF {
+            0x3FF
+        } else {
+            self.minor
+        };
+        let patch = if self.patch > 0xFFF {
+            0xFFF
+        } else {
+            self.patch
+        };
         (major << 22) | (minor << 12) | patch
     }
 }
@@ -68,6 +80,93 @@ impl core::fmt::Display for PluginApiVersion {
 // Plugin metadata (C-ABI friendly)
 // ---------------------------------------------------------------------------
 
+/// Maximum number of bytes accepted for one native plugin metadata field.
+///
+/// Metadata is copied during plugin loading. Bounding every field before its
+/// pointer is read prevents malformed ABI data from becoming an unbounded
+/// allocation request.
+pub const MAX_METADATA_FIELD_LEN: usize = 16 * 1024;
+
+/// A borrowed, length-delimited UTF-8 string crossing the native plugin ABI.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct FfiStr {
+    pub data: *const c_char,
+    pub len: usize,
+}
+
+impl FfiStr {
+    /// Construct an ABI string from data with static lifetime.
+    #[must_use]
+    pub const fn from_static(value: &'static str) -> Self {
+        Self {
+            data: value.as_ptr().cast(),
+            len: value.len(),
+        }
+    }
+
+    /// Copy this ABI string after validating its declared length.
+    ///
+    /// # Safety
+    ///
+    /// For a non-empty value, `data` must point to at least `len` readable
+    /// bytes and remain valid for this call.
+    unsafe fn try_to_string(&self, field: &'static str) -> Result<String, MetadataError> {
+        if self.len > MAX_METADATA_FIELD_LEN {
+            return Err(MetadataError::FieldTooLong {
+                field,
+                len: self.len,
+                max: MAX_METADATA_FIELD_LEN,
+            });
+        }
+        if self.len == 0 {
+            return Ok(String::new());
+        }
+        if self.data.is_null() {
+            return Err(MetadataError::NullPointer { field });
+        }
+
+        let bytes = unsafe { core::slice::from_raw_parts(self.data.cast::<u8>(), self.len) };
+        Ok(String::from_utf8_lossy(bytes).into_owned())
+    }
+}
+
+// Safety: `FfiStr` points to immutable data owned by the native plugin.
+unsafe impl Send for FfiStr {}
+unsafe impl Sync for FfiStr {}
+
+/// Validation failure while copying native plugin metadata.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MetadataError {
+    FieldTooLong {
+        field: &'static str,
+        len: usize,
+        max: usize,
+    },
+    NullPointer {
+        field: &'static str,
+    },
+}
+
+impl core::fmt::Display for MetadataError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::FieldTooLong { field, len, max } => write!(
+                f,
+                "native plugin metadata field '{field}' is {len} bytes (maximum {max})"
+            ),
+            Self::NullPointer { field } => {
+                write!(
+                    f,
+                    "native plugin metadata field '{field}' has a null pointer"
+                )
+            }
+        }
+    }
+}
+
+impl std::error::Error for MetadataError {}
+
 /// Plugin metadata exposed to the server through the FFI boundary.
 ///
 /// All string fields are **borrowed** from the plugin's static data and are
@@ -77,22 +176,22 @@ impl core::fmt::Display for PluginApiVersion {
 #[derive(Debug, Clone)]
 pub struct PluginMetadata {
     /// Human-readable name of the plugin (e.g. `"Essentials"`).
-    pub name: *const c_char,
+    pub name: FfiStr,
     /// Version string (e.g. `"1.4.2"`).
-    pub version: *const c_char,
+    pub version: FfiStr,
     /// Comma-separated author list.
-    pub authors: *const c_char,
+    pub authors: FfiStr,
     /// Short description of what the plugin does.
-    pub description: *const c_char,
+    pub description: FfiStr,
     /// Comma-separated list of plugin dependency names.
-    pub dependencies: *const c_char,
+    pub dependencies: FfiStr,
     /// Comma-separated list of permissions the plugin requires.
-    pub permissions: *const c_char,
+    pub permissions: FfiStr,
     /// The API version this plugin was compiled against.
     pub api_version: PluginApiVersion,
 }
 
-// Safety: `PluginMetadata` contains only `*const c_char` pointers (send + sync).
+// Safety: `PluginMetadata` contains only immutable ABI strings and integers.
 unsafe impl Send for PluginMetadata {}
 unsafe impl Sync for PluginMetadata {}
 
@@ -114,53 +213,30 @@ impl PluginMetadata {
     /// Convert the C-ABI metadata into an owned representation.
     ///
     /// # Safety
-    /// Every `*const c_char` pointer must be a valid NUL-terminated C string
-    /// that remains valid for the duration of this call.
-    #[must_use]
-    pub unsafe fn to_owned(&self) -> OwnedPluginMetadata {
-        OwnedPluginMetadata {
-            name: unsafe { self.safe_cstr("name") },
-            version: unsafe { self.safe_cstr("version") },
-            authors: unsafe { self.safe_cstr("authors") }
+    /// Every non-empty [`FfiStr`] must point to at least its declared number
+    /// of readable bytes and remain valid for the duration of this call.
+    pub unsafe fn try_to_owned(&self) -> Result<OwnedPluginMetadata, MetadataError> {
+        Ok(OwnedPluginMetadata {
+            name: unsafe { self.name.try_to_string("name") }?,
+            version: unsafe { self.version.try_to_string("version") }?,
+            authors: unsafe { self.authors.try_to_string("authors") }?
                 .split(',')
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty())
                 .collect(),
-            description: unsafe { self.safe_cstr("description") },
-            dependencies: unsafe { self.safe_cstr("dependencies") }
+            description: unsafe { self.description.try_to_string("description") }?,
+            dependencies: unsafe { self.dependencies.try_to_string("dependencies") }?
                 .split(',')
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty())
                 .collect(),
-            permissions: unsafe { self.safe_cstr("permissions") }
+            permissions: unsafe { self.permissions.try_to_string("permissions") }?
                 .split(',')
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty())
                 .collect(),
             api_version: self.api_version,
-        }
-    }
-
-    /// Read a potentially-null C string field, returning an empty string for
-    /// null pointers.
-    ///
-    /// # Safety
-    /// The internal pointer for `field` must be valid or null.
-    unsafe fn safe_cstr(&self, field: &str) -> String {
-        let ptr: *const c_char = match field {
-            "name" => self.name,
-            "version" => self.version,
-            "authors" => self.authors,
-            "description" => self.description,
-            "dependencies" => self.dependencies,
-            "permissions" => self.permissions,
-            _ => core::ptr::null(),
-        };
-        if ptr.is_null() {
-            String::new()
-        } else {
-            unsafe { CStr::from_ptr(ptr).to_string_lossy().into_owned() }
-        }
+        })
     }
 }
 
@@ -306,3 +382,54 @@ pub struct RawEvent {
 // the data is read-only during the callback and the server owns the backing memory.
 unsafe impl Send for RawEvent {}
 unsafe impl Sync for RawEvent {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const EMPTY: FfiStr = FfiStr::from_static("");
+
+    #[test]
+    fn rejects_oversized_metadata_before_reading_its_pointer() {
+        let metadata = PluginMetadata {
+            name: FfiStr {
+                data: core::ptr::dangling(),
+                len: MAX_METADATA_FIELD_LEN + 1,
+            },
+            version: EMPTY,
+            authors: EMPTY,
+            description: EMPTY,
+            dependencies: EMPTY,
+            permissions: EMPTY,
+            api_version: PluginApiVersion::CURRENT,
+        };
+
+        let error = unsafe { metadata.try_to_owned() }.unwrap_err();
+        assert_eq!(
+            error,
+            MetadataError::FieldTooLong {
+                field: "name",
+                len: MAX_METADATA_FIELD_LEN + 1,
+                max: MAX_METADATA_FIELD_LEN,
+            }
+        );
+    }
+
+    #[test]
+    fn converts_length_delimited_metadata_without_nul_terminators() {
+        let metadata = PluginMetadata {
+            name: FfiStr::from_static("PatchBukkit"),
+            version: FfiStr::from_static("1.0.0"),
+            authors: FfiStr::from_static("Alice, Bob"),
+            description: FfiStr::from_static("Bukkit bridge"),
+            dependencies: FfiStr::from_static("WorldEdit"),
+            permissions: FfiStr::from_static("pumpkin:java, pumpkin:plugins"),
+            api_version: PluginApiVersion::CURRENT,
+        };
+
+        let owned = unsafe { metadata.try_to_owned() }.unwrap();
+        assert_eq!(owned.name, "PatchBukkit");
+        assert_eq!(owned.authors, ["Alice", "Bob"]);
+        assert_eq!(owned.permissions, ["pumpkin:java", "pumpkin:plugins"]);
+    }
+}

@@ -119,7 +119,8 @@ impl NativePluginHandle {
 
         // 5. Convert C-ABI metadata to server's internal PluginMetadata.
         let metadata_raw = unsafe { vtable.metadata() };
-        let owned = unsafe { metadata_raw.to_owned() };
+        let owned = unsafe { metadata_raw.try_to_owned() }
+            .map_err(|error| format!("Invalid native plugin metadata: {error}"))?;
         let metadata = PluginMetadata {
             name: owned.name,
             version: owned.version,

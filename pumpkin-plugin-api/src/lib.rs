@@ -42,12 +42,12 @@
 //! impl NativePlugin for MyNativePlugin {
 //!     fn metadata() -> PluginMetadata {
 //!         PluginMetadata {
-//!             name: c"my-native-plugin".as_ptr(),
-//!             version: c"0.1.0".as_ptr(),
-//!             authors: c"you".as_ptr(),
-//!             description: c"An example native plugin.".as_ptr(),
-//!             dependencies: c"".as_ptr(),
-//!             permissions: c"".as_ptr(),
+//!             name: FfiStr::from_static("my-native-plugin"),
+//!             version: FfiStr::from_static("0.1.0"),
+//!             authors: FfiStr::from_static("you"),
+//!             description: FfiStr::from_static("An example native plugin."),
+//!             dependencies: FfiStr::from_static(""),
+//!             permissions: FfiStr::from_static(""),
 //!             api_version: PluginApiVersion::CURRENT,
 //!         }
 //!     }
