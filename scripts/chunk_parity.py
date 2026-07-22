@@ -2,11 +2,13 @@
 """Block/biome/heightmap/structure differential for modern Anvil worlds.
 
 Usage:
-  uv run --with nbtlib scripts/chunk_parity.py VANILLA_WORLD PUMPKIN_WORLD
+  uv run --with nbtlib --with lz4 scripts/chunk_parity.py VANILLA_WORLD PUMPKIN_WORLD
 
 The world arguments may point either at a world root or directly at a region
 folder. Every chunk present in both inputs is decoded using the modern 26.2
-paletted-container format and compared block-for-block.
+paletted-container format and compared by base block name, biome, heightmap,
+and structure NBT. Pumpkin's compact Anvil palette stores numeric state IDs,
+so state properties are deliberately excluded from the cross-format block hash.
 """
 from __future__ import annotations
 
@@ -24,6 +26,62 @@ from pathlib import Path
 from typing import Any, Iterable
 
 import nbtlib
+
+
+def load_numeric_palettes() -> tuple[dict[int, str], dict[int, str]]:
+    asset_root = Path(__file__).resolve().parents[1] / "assets"
+    blocks = json.loads((asset_root / "blocks.json").read_text(encoding="utf-8"))
+    state_names = {
+        int(state["id"]): f"minecraft:{block['name']}"
+        for block in blocks["blocks"]
+        for state in block["states"]
+    }
+    biomes = json.loads((asset_root / "biome.json").read_text(encoding="utf-8"))
+    biome_names = {
+        int(data["id"]): f"minecraft:{name}" for name, data in biomes.items()
+    }
+    return state_names, biome_names
+
+
+STATE_NAMES, BIOME_NAMES = load_numeric_palettes()
+
+
+def decompress_lz4_block_stream(data: bytes) -> bytes:
+    """Decode the LZ4Block stream used by modern Java Anvil compression id 4."""
+    import lz4.block
+
+    output = bytearray()
+    offset = 0
+    magic = b"LZ4Block"
+    while offset < len(data):
+        if data[offset : offset + len(magic)] != magic:
+            raise ValueError(f"Invalid LZ4Block magic at offset {offset}")
+        offset += len(magic)
+        if offset + 13 > len(data):
+            raise ValueError("Truncated LZ4Block header")
+        token = data[offset]
+        offset += 1
+        compressed_len, decompressed_len, _checksum = struct.unpack_from(
+            "<III", data, offset
+        )
+        offset += 12
+        if compressed_len == 0 and decompressed_len == 0:
+            break
+        block = data[offset : offset + compressed_len]
+        if len(block) != compressed_len:
+            raise ValueError("Truncated LZ4Block payload")
+        offset += compressed_len
+        method = token & 0xF0
+        if method == 0x10:
+            decoded = block
+        elif method == 0x20:
+            decoded = lz4.block.decompress(block, uncompressed_size=decompressed_len)
+        else:
+            raise ValueError(f"Unsupported LZ4Block method {method:#x}")
+        if len(decoded) != decompressed_len:
+            raise ValueError("LZ4Block decompressed length mismatch")
+        output.extend(decoded)
+    return bytes(output)
 
 REGION_RE = re.compile(r"r\.(-?\d+)\.(-?\d+)\.mca$")
 
@@ -77,6 +135,8 @@ def read_region_chunks(path: Path) -> Iterable[tuple[tuple[int, int], Any]]:
                     payload = zlib.decompress(payload)
                 elif compression == 3:
                     pass
+                elif compression == 4:
+                    payload = decompress_lz4_block_stream(payload)
                 else:
                     raise ValueError(f"Unsupported compression {compression} in {path}")
                 root = nbtlib.File.parse(io.BytesIO(payload))
@@ -85,16 +145,14 @@ def read_region_chunks(path: Path) -> Iterable[tuple[tuple[int, int], Any]]:
                 yield (x, z), root
 
 
-def palette_name(entry: Any) -> str:
+def palette_name(entry: Any, numeric_names: dict[int, str]) -> str:
     data = normalized(entry)
     if isinstance(data, str):
         return data
+    if isinstance(data, int):
+        return numeric_names.get(data, f"<unknown-id:{data}>")
     name = data.get("Name", data.get("name", "<unknown>"))
-    props = data.get("Properties", data.get("properties", {}))
-    if not props:
-        return str(name)
-    encoded = ",".join(f"{key}={props[key]}" for key in sorted(props))
-    return f"{name}[{encoded}]"
+    return str(name)
 
 
 def unpack_palette_indices(raw_longs: Iterable[int], palette_size: int, count: int, minimum_bits: int) -> list[int]:
@@ -115,11 +173,16 @@ def unpack_palette_indices(raw_longs: Iterable[int], palette_size: int, count: i
     return result
 
 
-def decode_container(container: Any, count: int, minimum_bits: int) -> tuple[str, ...]:
+def decode_container(
+    container: Any,
+    count: int,
+    minimum_bits: int,
+    numeric_names: dict[int, str],
+) -> tuple[str, ...]:
     if container is None:
         return tuple()
     palette = container.get("palette", container.get("Palette", []))
-    names = [palette_name(item) for item in palette]
+    names = [palette_name(item, numeric_names) for item in palette]
     if not names:
         return tuple()
     data = container.get("data", container.get("BlockStates", []))
@@ -135,10 +198,10 @@ def chunk_fingerprint(root: Any) -> dict[str, Any]:
         y = int(section.get("Y", 0))
         block_states = section.get("block_states")
         if block_states is not None:
-            blocks[y] = decode_container(block_states, 4096, 4)
+            blocks[y] = decode_container(block_states, 4096, 4, STATE_NAMES)
         biome_states = section.get("biomes")
         if biome_states is not None:
-            biomes[y] = decode_container(biome_states, 64, 1)
+            biomes[y] = decode_container(biome_states, 64, 1, BIOME_NAMES)
     return {
         "blocks": blocks,
         "biomes": biomes,

@@ -156,7 +156,10 @@ world_the_end/
 
 # Local parity/deployment workspaces (generated artifacts and downloaded binaries)
 .hermes/
+__pycache__/
+*.py[cod]
 NewPumpkin/
+PumpkinParity/
 VanillaServer/
 FabriPumk/libraries/
 FabriPumk/versions/
