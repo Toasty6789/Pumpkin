@@ -24,10 +24,10 @@ and customizable experience. It prioritizes performance and player enjoyment whi
 - **Flexibility**: Highly configurable, with the ability to disable unnecessary features.
 - **Extensibility**: Provides a foundation for plugin development.
 
-> [!IMPORTANT]
-> Pumpkin is currently under heavy development.
+> [!NOTE]
+> Pumpkin 1.0.0 has been released! This is the first stable release.
 >
-> [See what needs to be done before the 1.0.0 Release](https://github.com/Pumpkin-MC/Pumpkin/issues/449)
+> [See the release roadmap](https://github.com/Pumpkin-MC/Pumpkin/issues/449)
 
 ## Features
 
@@ -79,7 +79,7 @@ and customizable experience. It prioritizes performance and player enjoyment whi
   - [x] Villagers (W.I.P)
   - [X] Entity Saving
 - Server
-  - [Plugins](https://github.com/Pumpkin-MC/Pumpkin/issues/1407)
+  - [x] [Plugins](https://github.com/Pumpkin-MC/Pumpkin/issues/1407)
   - [x] Query
   - [x] RCON
   - [x] Inventories
