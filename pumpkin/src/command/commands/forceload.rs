@@ -73,13 +73,33 @@ impl CommandExecutor for ForceloadAddExecutor {
                 ));
             }
 
-            {
-                let mut forced = world.forced_chunks.lock().unwrap();
+            let newly_forced = {
+                let mut forced = world
+                    .forced_chunks
+                    .lock()
+                    .map_err(|_| ERROR_FAILED_ADD.create_without_context())?;
+                let mut newly_forced = Vec::with_capacity(total_chunks as usize);
                 for x in min_x..=max_x {
                     for z in min_z..=max_z {
-                        forced.insert(Vector2::new(x, z));
+                        let position = Vector2::new(x, z);
+                        if forced.insert(position) {
+                            newly_forced.push(position);
+                        }
                     }
                 }
+                newly_forced
+            };
+
+            if !newly_forced.is_empty() {
+                let mut chunk_loading = world
+                    .level
+                    .chunk_loading
+                    .lock()
+                    .map_err(|_| ERROR_FAILED_ADD.create_without_context())?;
+                for position in newly_forced {
+                    chunk_loading.add_force_ticket(position);
+                }
+                chunk_loading.send_change();
             }
 
             world.update_active_chunks();
@@ -157,13 +177,33 @@ impl CommandExecutor for ForceloadRemoveExecutor {
                 ));
             }
 
-            {
-                let mut forced = world.forced_chunks.lock().unwrap();
+            let removed_chunks = {
+                let mut forced = world
+                    .forced_chunks
+                    .lock()
+                    .map_err(|_| ERROR_FAILED_REMOVE.create_without_context())?;
+                let mut removed_chunks = Vec::with_capacity(total_chunks as usize);
                 for x in min_x..=max_x {
                     for z in min_z..=max_z {
-                        forced.remove(&Vector2::new(x, z));
+                        let position = Vector2::new(x, z);
+                        if forced.remove(&position) {
+                            removed_chunks.push(position);
+                        }
                     }
                 }
+                removed_chunks
+            };
+
+            if !removed_chunks.is_empty() {
+                let mut chunk_loading = world
+                    .level
+                    .chunk_loading
+                    .lock()
+                    .map_err(|_| ERROR_FAILED_REMOVE.create_without_context())?;
+                for position in removed_chunks {
+                    chunk_loading.remove_force_ticket(position);
+                }
+                chunk_loading.send_change();
             }
 
             world.update_active_chunks();
@@ -211,12 +251,28 @@ impl CommandExecutor for ForceloadRemoveAllExecutor {
                 .as_ref()
                 .ok_or_else(|| ERROR_FAILED_REMOVE.create_without_context())?;
 
-            let removed_count = {
-                let mut forced = world.forced_chunks.lock().unwrap();
+            let (removed_count, removed_chunks) = {
+                let mut forced = world
+                    .forced_chunks
+                    .lock()
+                    .map_err(|_| ERROR_FAILED_REMOVE.create_without_context())?;
+                let removed_chunks = forced.iter().copied().collect::<Vec<_>>();
                 let count = forced.len();
                 forced.clear();
-                count
+                (count, removed_chunks)
             };
+
+            if !removed_chunks.is_empty() {
+                let mut chunk_loading = world
+                    .level
+                    .chunk_loading
+                    .lock()
+                    .map_err(|_| ERROR_FAILED_REMOVE.create_without_context())?;
+                for position in removed_chunks {
+                    chunk_loading.remove_force_ticket(position);
+                }
+                chunk_loading.send_change();
+            }
 
             world.update_active_chunks();
 
@@ -256,7 +312,10 @@ impl CommandExecutor for ForceloadQueryExecutor {
             };
 
             let is_forced = {
-                let forced = world.forced_chunks.lock().unwrap();
+                let forced = world
+                    .forced_chunks
+                    .lock()
+                    .map_err(|_| ERROR_FAILED_QUERY.create_without_context())?;
                 forced.contains(&chunk_pos)
             };
 
@@ -289,7 +348,10 @@ impl CommandExecutor for ForceloadQueryExecutor {
             }
 
             let all_forced = {
-                let forced = world.forced_chunks.lock().unwrap();
+                let forced = world
+                    .forced_chunks
+                    .lock()
+                    .map_err(|_| ERROR_FAILED_QUERY.create_without_context())?;
                 forced
                     .iter()
                     .map(|pos| format!("[{}, {}]", pos.x, pos.y))

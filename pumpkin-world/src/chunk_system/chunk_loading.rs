@@ -323,13 +323,11 @@ impl ChunkLoading {
         self.add_ticket(pos, Self::FULL_CHUNK_LEVEL);
     }
     pub fn remove_force_ticket(&mut self, pos: ChunkPos) {
-        // debug!("remove force ticket at {pos:?}");
-        let index = self
-            .high_priority
-            .iter()
-            .find_position(|x| **x == pos)
-            .unwrap()
-            .0;
+        // A removal can race a duplicate/unload request. Missing tickets are
+        // already in the desired state and must not take down the server.
+        let Some(index) = self.high_priority.iter().position(|entry| *entry == pos) else {
+            return;
+        };
         self.high_priority.remove(index);
         self.is_priority_dirty = true;
         self.remove_ticket(pos, Self::FULL_CHUNK_LEVEL);
@@ -454,4 +452,11 @@ fn test() {
 
         println!("\nloading level:\n{header}\n{grid}");
     }
+}
+
+#[test]
+fn removing_missing_force_ticket_is_a_noop() {
+    let mut loading = ChunkLoading::new(Arc::new(LevelChannel::new()));
+
+    loading.remove_force_ticket((12, -7).into());
 }
