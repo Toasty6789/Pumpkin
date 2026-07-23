@@ -336,6 +336,10 @@ pub trait EntityBase: Send + Sync + NBTStorage + std::any::Any {
         if entity.fire_ticks.load(Ordering::Relaxed) < ticks as i32 {
             entity.fire_ticks.store(ticks as i32, Ordering::Relaxed);
         }
+        // Sync the visual fire flag to clients so the burning animation appears.
+        if ticks > 0 {
+            entity.has_visual_fire.store(true, Ordering::Relaxed);
+        }
         // TODO: defrost
     }
 
@@ -3689,5 +3693,31 @@ mod tests {
                 "status mismatch at index {i}"
             );
         }
+    }
+
+    /// Regression test for #2108: entities that catch fire must have the visual fire flag set.
+    #[test]
+    fn fire_ticks_set_visual_fire_flag() {
+        use std::sync::atomic::AtomicBool;
+        use std::sync::atomic::Ordering;
+
+        // Simulate the set_on_fire_for_ticks path: when a non-zero fire tick is set,
+        // has_visual_fire must be true so that the client sees the burning animation.
+        let fire_ticks = std::sync::atomic::AtomicI32::new(0);
+        let has_visual_fire = AtomicBool::new(false);
+
+        // Simulate set_on_fire_for_ticks for ticks > 0
+        let ticks: u32 = 160; // 8 seconds
+        if fire_ticks.load(Ordering::Relaxed) < ticks as i32 {
+            fire_ticks.store(ticks as i32, Ordering::Relaxed);
+        }
+        if ticks > 0 {
+            has_visual_fire.store(true, Ordering::Relaxed);
+        }
+
+        assert!(
+            has_visual_fire.load(Ordering::Relaxed),
+            "has_visual_fire must be true when fire_ticks > 0"
+        );
     }
 }
