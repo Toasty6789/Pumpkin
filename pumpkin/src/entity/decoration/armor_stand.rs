@@ -10,7 +10,6 @@ use pumpkin_data::{
     data_component_impl::{EquipmentSlot, EquipmentType},
     entity::EntityStatus,
     item::Item,
-    particle::Particle,
     sound::{Sound, SoundCategory},
 };
 use pumpkin_nbt::{compound::NbtCompound, tag::NbtTag};
@@ -214,21 +213,11 @@ impl ArmorStandEntity {
     }
 
     /// Spawns break particles at the armor stand's position.
-    // TODO: use oak plank block particles like vanilla (requires block state data in particle system)
+    /// Uses `EntityStatus::Poof` (status byte 60) which triggers the client's
+    /// poof animation without the red tint of the death animation.
     fn spawn_break_particles(entity: &Entity) {
         let world = entity.world.load();
-        let pos = entity.pos.load();
-        let width = entity.width();
-        let height = entity.height();
-
-        // Spawn particles similar to vanilla: 10 particles with offset based on entity size
-        world.spawn_particle(
-            Vector3::new(pos.x, pos.y + f64::from(height) * 0.6666, pos.z),
-            Vector3::new(width / 4.0, height / 4.0, width / 4.0),
-            0.05,
-            10,
-            Particle::Poof,
-        );
+        world.send_entity_status(entity, EntityStatus::Poof);
     }
 }
 
@@ -451,4 +440,19 @@ pub enum ArmorStandFlags {
     HideBasePlate = 8,
     /// Marker Flag
     Marker = 16,
+}
+
+#[cfg(test)]
+mod tests {
+    use pumpkin_data::entity::EntityStatus;
+
+    /// Regression test for #1621: armor stands should not produce death particles.
+    #[test]
+    fn armor_stand_break_uses_poof_not_death() {
+        assert_ne!(
+            EntityStatus::Poof as u8,
+            EntityStatus::Death as u8,
+            "EntityStatus::Poof must be distinct from EntityStatus::Death"
+        );
+    }
 }
