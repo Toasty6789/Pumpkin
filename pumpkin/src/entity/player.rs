@@ -3443,11 +3443,9 @@ impl Player {
         let current_level = self.experience_level.load(Ordering::Relaxed);
         let current_points = self.experience_points.load(Ordering::Relaxed);
 
-        let total_exp = experience::points_to_level(current_level) as i64 + current_points as i64;
-        let new_total_exp = total_exp + added_points as i64;
-        let safe_new_total = new_total_exp.clamp(0, i32::MAX as i64) as i32;
-
-        let (new_level, new_points) = experience::total_to_level_and_points(safe_new_total);
+        // Use incremental carry that never computes total XP, avoiding i32 overflow
+        let (new_level, new_points) =
+            experience::add_points_to_level(current_level, current_points, added_points);
         let progress = experience::progress_in_level(new_points, new_level);
 
         self.set_experience(new_level, progress, new_points).await;
@@ -4250,10 +4248,15 @@ impl NBTStorage for Player {
 
             self.abilities.lock().await.write_nbt(nbt).await;
 
-            let total_exp =
-                experience::points_to_level(self.experience_level.load(Ordering::Relaxed))
-                    + self.experience_points.load(Ordering::Relaxed);
-            nbt.put_int("XpTotal", total_exp);
+            let level = self.experience_level.load(Ordering::Relaxed);
+            let points = self.experience_points.load(Ordering::Relaxed);
+
+            // Store individual level and points to avoid i32 overflow on total XP
+            nbt.put_int("XpLevel", level);
+            nbt.put_int("XpPoints", points);
+            // Keep backward-compatible XpTotal (may saturate at i32::MAX for very high levels)
+            let total_exp = experience::points_to_level(level) as i64 + points as i64;
+            nbt.put_int("XpTotal", total_exp.min(i32::MAX as i64) as i32);
             nbt.put_byte("playerGameType", self.gamemode.load() as i8);
             if let Some(previous_gamemode) = self.previous_gamemode.load() {
                 nbt.put_byte("previousPlayerGameType", previous_gamemode as i8);
@@ -4294,10 +4297,26 @@ impl NBTStorage for Player {
             self.ender_chest_inventory.read_nbt_non_mut(nbt).await;
             self.abilities.lock().await.read_nbt(nbt).await;
 
-            // Load from total XP
-            let total_exp = nbt.get_int("XpTotal").unwrap_or(0);
-            let (level, points) = experience::total_to_level_and_points(total_exp);
-            let progress = experience::progress_in_level(level, points);
+            // Load from individual XP fields if available (new format), fall back to total XP
+            let (level, points) = nbt.get_int("XpLevel").map_or_else(
+                || {
+                    // Legacy: reconstruct from total XP
+                    let total_exp = nbt.get_int("XpTotal").unwrap_or(0);
+                    experience::total_to_level_and_points(total_exp)
+                },
+                |lvl| {
+                    let pts = nbt.get_int("XpPoints").unwrap_or(0);
+                    // Validate: points must be less than points_in_level, otherwise recompute
+                    if pts < experience::points_in_level(lvl) {
+                        (lvl, pts)
+                    } else {
+                        // Fall back to total for consistency
+                        let total_exp = nbt.get_int("XpTotal").unwrap_or(0);
+                        experience::total_to_level_and_points(total_exp)
+                    }
+                },
+            );
+            let progress = experience::progress_in_level(points, level);
             self.experience_level.store(level, Ordering::Relaxed);
             self.experience_progress.store(progress);
             self.experience_points.store(points, Ordering::Relaxed);
