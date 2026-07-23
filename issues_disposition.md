@@ -1,6 +1,6 @@
 # Pumpkin-MC/Pumpkin Open-Issue Disposition Ledger
 
-Live snapshot: 2026-07-22, 128 open issues fetched from `Pumpkin-MC/Pumpkin` (84 actionable bugs, 33 enhancements, 7 duplicates, 3 support questions, and 1 insufficient-information report). Classifications are explicit dispositions, not claims that every bug is fixed. Rows marked `Pending reproduction` still require RED-GREEN processing.
+Live snapshot: 2026-07-23, 129 open issues fetched from `Pumpkin-MC/Pumpkin` (85 actionable bugs, 33 enhancements, 7 duplicates, 3 support questions, and 1 insufficient-information report). Classifications are explicit dispositions, not claims that every bug is fixed. Rows marked `Pending reproduction` still require RED-GREEN processing.
 
 | Issue | Classification | Labels | Reproduction / decision | Fork commit | Verification |
 |---:|---|---|---|---|---|
@@ -132,3 +132,4 @@ Live snapshot: 2026-07-22, 128 open issues fetched from `Pumpkin-MC/Pumpkin` (84
 | [#2455](https://github.com/Pumpkin-MC/Pumpkin/issues/2455) Server crashes when player joins: update_advancement.rs panics with "Item serialization is not yet implemented without serde" | [Duplicate] | bug | Duplicate of closed root report #2424; fix incorporated in fork | b88e59eb | Java 26.2 advancement icon regression passed |
 | [#2459](https://github.com/Pumpkin-MC/Pumpkin/issues/2459) Numerous console warnings related to placed features: "Placed feature Pine is not supported in a jigsaw pool" | [Actionable Bug] | bug | Implemented in fork | ac9cc046 | Pine placed-feature regression passed |
 | [#2463](https://github.com/Pumpkin-MC/Pumpkin/issues/2463) Thread 'tokio-rt-worker' with ThreadId(2) panicked at pumpkin-protocol/src/java/client/play/update_advancement.rs:69:17 | [Duplicate] | bug | Reporter stack is the #2424 advancement-icon panic; maintainer also identified it as a fixed duplicate | b88e59eb | Java 26.2 advancement icon regression passed |
+| [#2466](https://github.com/Pumpkin-MC/Pumpkin/issues/2466) Something wrong in the nether | [Actionable Bug] | bug, worldgen | Pending reproduction | — | RED test and root-cause disposition required |
