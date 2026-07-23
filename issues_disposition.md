@@ -1,6 +1,6 @@
 # Pumpkin-MC/Pumpkin Open-Issue Disposition Ledger
 
-Live snapshot: 2026-07-22, 128 open issues fetched from `Pumpkin-MC/Pumpkin` (86 actionable bugs, 33 enhancements, 5 duplicates, 3 support questions, and 1 insufficient-information report). Classifications are explicit dispositions, not claims that every bug is fixed. Rows marked `Pending reproduction` still require RED-GREEN processing.
+Live snapshot: 2026-07-22, 128 open issues fetched from `Pumpkin-MC/Pumpkin` (85 actionable bugs, 33 enhancements, 6 duplicates, 3 support questions, and 1 insufficient-information report). Classifications are explicit dispositions, not claims that every bug is fixed. Rows marked `Pending reproduction` still require RED-GREEN processing.
 
 | Issue | Classification | Labels | Reproduction / decision | Fork commit | Verification |
 |---:|---|---|---|---|---|
@@ -123,7 +123,7 @@ Live snapshot: 2026-07-22, 128 open issues fetched from `Pumpkin-MC/Pumpkin` (86
 | [#2434](https://github.com/Pumpkin-MC/Pumpkin/issues/2434) Crash — memory allocation of ~94 trillion bytes failed in PluginManager::spawn_plugin_initialization when loading PatchBukkit | [Actionable Bug] | bug | Implemented in fork | 3e24376b | bounded malformed metadata regressions passed |
 | [#2438](https://github.com/Pumpkin-MC/Pumpkin/issues/2438) Basically cant do anything because when I get an advancement it crashes the server | [Duplicate] | bug | Duplicate of closed root report #2424; fix incorporated in fork | b88e59eb | Java 26.2 advancement icon regression passed |
 | [#2441](https://github.com/Pumpkin-MC/Pumpkin/issues/2441) When the server crashes, I can't type in terminal | [Actionable Bug] | bug | Pending reproduction | — | RED test and root-cause disposition required |
-| [#2444](https://github.com/Pumpkin-MC/Pumpkin/issues/2444) Server crashed when jumping into lava while in creative mode | [Actionable Bug] | bug | Pending reproduction | — | RED test and root-cause disposition required |
+| [#2444](https://github.com/Pumpkin-MC/Pumpkin/issues/2444) Server crashed when jumping into lava while in creative mode | [Duplicate] | bug | Attached crash and rejoin logs both identify the closed #2424 advancement-icon panic | b88e59eb | Java 26.2 advancement icon regression passed |
 | [#2445](https://github.com/Pumpkin-MC/Pumpkin/issues/2445) Block state of leaves doesn't work as expected | [Actionable Bug] | bug | Implemented in fork | ac9cc046 | generated leaf-distance regression passed |
 | [#2446](https://github.com/Pumpkin-MC/Pumpkin/issues/2446) Panic on advancement trigger: "Item serialization is not yet implemented without serde" | [Duplicate] | bug | Duplicate of closed root report #2424; fix incorporated in fork | b88e59eb | Java 26.2 advancement icon regression passed |
 | [#2447](https://github.com/Pumpkin-MC/Pumpkin/issues/2447) 2 more bugs | [Actionable Bug] | bug | Pending reproduction | — | RED test and root-cause disposition required |
