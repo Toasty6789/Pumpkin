@@ -61,13 +61,15 @@ impl AttackType {
     }
 }
 
-pub fn handle_knockback(attacker: &Entity, victim: &Entity, strength: f64) {
+pub fn handle_knockback(attacker: &Entity, victim: &dyn EntityBase, strength: f64) {
     let yaw = attacker.yaw.load();
-    victim.knockback(
-        strength * 0.5,
-        f64::from((yaw.to_radians()).sin()),
-        f64::from(-(yaw.to_radians()).cos()),
-    );
+    let x = f64::from((yaw.to_radians()).sin());
+    let z = f64::from(-(yaw.to_radians()).cos());
+    if let Some(living) = victim.get_living_entity() {
+        living.apply_knockback(strength * 0.5, x, z);
+    } else {
+        victim.get_entity().knockback(strength * 0.5, x, z);
+    }
 
     let velocity = attacker.velocity.load();
     attacker.velocity.store(velocity.multiply(0.6, 1.0, 0.6));

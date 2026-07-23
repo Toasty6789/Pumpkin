@@ -461,6 +461,17 @@ impl LivingEntity {
         self.entity.entity_id
     }
 
+    /// Applies vanilla living-entity knockback after reducing its strength by
+    /// the entity's current knockback-resistance attribute.
+    pub fn apply_knockback(&self, strength: f64, x: f64, z: f64) {
+        let resistance = self.get_attribute_value(&Attributes::KNOCKBACK_RESISTANCE);
+        self.entity.apply_knockback(
+            knockback_strength_after_resistance(strength, resistance),
+            x,
+            z,
+        );
+    }
+
     pub async fn add_effect(&self, effect: Effect) {
         // Apply instant effects immediately before storing
         if effect.effect_type == &StatusEffect::INSTANT_HEALTH {
@@ -2399,7 +2410,7 @@ impl EntityBase for LivingEntity {
                     let target_pos = self.entity.pos.load();
                     let dx = source_pos.x - target_pos.x;
                     let dz = source_pos.z - target_pos.z;
-                    self.entity.apply_knockback(0.4, dx, dz);
+                    self.apply_knockback(0.4, dx, dz);
                     self.entity.send_velocity();
                 }
             }
@@ -2865,6 +2876,10 @@ fn effect_has_at_least_amplifier(
         .is_some_and(|existing| existing.amplifier >= min_amplifier)
 }
 
+fn knockback_strength_after_resistance(strength: f64, resistance: f64) -> f64 {
+    strength * (1.0 - resistance.clamp(0.0, 1.0))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3013,6 +3028,13 @@ mod tests {
             &StatusEffect::INVISIBILITY,
             3
         ));
+    }
+
+    #[test]
+    fn knockback_strength_respects_resistance_attribute() {
+        assert_eq!(knockback_strength_after_resistance(1.0, 0.0), 1.0);
+        assert!((knockback_strength_after_resistance(1.0, 0.6) - 0.4).abs() < f64::EPSILON);
+        assert_eq!(knockback_strength_after_resistance(1.0, 1.0), 0.0);
     }
 
     // ── on_death entity-not-found guard ───────────────────────────────────
