@@ -650,20 +650,15 @@ impl LivingEntity {
         effects.get(&effect).cloned()
     }
 
-    /// Atomic check: does the entity have `effect` with amplifier >= `min_amplifier`?
-    ///
-    /// Unlike calling `has_effect()` then `get_effect().expect(...)` in separate
-    /// lock acquisitions (which creates a TOCTOU race), this acquires the lock
-    /// once and performs both the existence check and the amplifier comparison.
+    /// Checks the active effect and amplifier while holding one lock, avoiding
+    /// a race between a separate existence check and value lookup.
     pub async fn has_effect_with_at_least_amplifier(
         &self,
         effect: &'static StatusEffect,
         min_amplifier: u8,
     ) -> bool {
         let effects = self.active_effects.lock().await;
-        effects
-            .get(&effect)
-            .is_some_and(|existing| existing.amplifier >= min_amplifier)
+        effect_has_at_least_amplifier(&effects, effect, min_amplifier)
     }
 
     pub fn is_in_fall_damage_resetting(&self) -> (bool, &Block) {
@@ -2860,6 +2855,16 @@ pub(crate) const fn bypasses_armor_durability(damage_type: &DamageType) -> bool 
     (damage_type.id < 64) && ((BYPASS_MASK >> damage_type.id) & 1 == 1)
 }
 
+fn effect_has_at_least_amplifier(
+    effects: &HashMap<&'static StatusEffect, Effect>,
+    effect: &'static StatusEffect,
+    min_amplifier: u8,
+) -> bool {
+    effects
+        .get(&effect)
+        .is_some_and(|existing| existing.amplifier >= min_amplifier)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2975,23 +2980,39 @@ mod tests {
         );
     }
 
-    // ── has_effect_with_at_least_amplifier ─────────────────────────────────
-    //
-    // Regression test for #1985 (https://github.com/Pumpkin-MC/Pumpkin/issues/1985).
-    //
-    // Previously, the effect give command used has_effect() then get_effect().expect()
-    // in separate lock acquisitions, creating a TOCTOU race where the effect could
-    // be removed between the two calls, causing a panic on None.
-    //
-    // The fix introduces a single atomic check that returns both existence and
-    // amplifier in one locked operation.
     #[test]
-    fn has_effect_with_at_least_amplifier_rejects_missing_effects() {
-        // Compile-time contract: the new helper returns bool, not a panic-prone Option.
-        // The implementation lives on LivingEntity; the command code no longer calls
-        // `.expect()` on a `get_effect()` result.
-        fn _accepts_fn(_f: impl Fn() -> bool) {}
-        // If the new method exists and returns bool, this compiles.
+    fn effect_amplifier_check_handles_missing_effects_and_thresholds() {
+        let mut effects = HashMap::new();
+
+        assert!(!effect_has_at_least_amplifier(
+            &effects,
+            &StatusEffect::INVISIBILITY,
+            0
+        ));
+
+        effects.insert(
+            &StatusEffect::INVISIBILITY,
+            Effect {
+                effect_type: &StatusEffect::INVISIBILITY,
+                duration: 200,
+                amplifier: 2,
+                ambient: false,
+                show_particles: true,
+                show_icon: true,
+                blend: true,
+            },
+        );
+
+        assert!(effect_has_at_least_amplifier(
+            &effects,
+            &StatusEffect::INVISIBILITY,
+            2
+        ));
+        assert!(!effect_has_at_least_amplifier(
+            &effects,
+            &StatusEffect::INVISIBILITY,
+            3
+        ));
     }
 
     // ── on_death entity-not-found guard ───────────────────────────────────
