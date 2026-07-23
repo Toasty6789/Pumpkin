@@ -88,14 +88,13 @@ impl CommandExecutor for GiveExecutor {
             let mut successes = 0;
 
             for target in targets {
-                if target.living_entity.has_effect(effect).await
-                    && target
-                        .living_entity
-                        .get_effect(effect)
-                        .await
-                        .expect("Effect should exist because has_effect returned true")
-                        .amplifier
-                        >= amplifier
+                // Single atomic check: no TOCTOU race between existence and amplifier check.
+                // Previously this used has_effect() then get_effect().expect(...) in separate
+                // lock acquisitions, which could panic when the effect was removed between calls.
+                if target
+                    .living_entity
+                    .has_effect_with_at_least_amplifier(effect, amplifier)
+                    .await
                 {
                 } else {
                     target
