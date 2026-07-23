@@ -34,10 +34,10 @@ impl CommandExecutor for ExecuteRunExecutor {
         Box::pin(async move {
             let command_str = StringArgumentType::get(context, "command")?;
             let dispatcher = context.server().command_dispatcher.read().await;
-            let result = dispatcher
-                .execute_input(command_str, &context.source)
-                .await?;
-            Ok(result)
+            dispatcher
+                .handle_command(&context.source, command_str)
+                .await;
+            Ok(1)
         })
     }
 }

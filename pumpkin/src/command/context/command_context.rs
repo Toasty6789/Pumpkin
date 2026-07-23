@@ -220,7 +220,7 @@ impl<'a> ContextChain<'a> {
 
         loop {
             if let Some(child) = current.get_child() {
-                modifiers.push(child.clone());
+                modifiers.push(Arc::new(current.clone()));
                 current = child;
             } else {
                 return current
@@ -558,13 +558,21 @@ mod test {
     use crate::command::errors::command_syntax_error::CommandSyntaxError;
     use crate::command::node::dispatcher::{CommandDispatcher, EmptyResultConsumer};
     use crate::command::node::tree::ROOT_NODE_ID;
-    use crate::command::node::{CommandExecutor, CommandExecutorResult, Redirection};
+    use crate::command::node::{
+        CommandExecutor, CommandExecutorResult, RedirectModifier, Redirection,
+    };
 
     struct TenExecutor;
     impl CommandExecutor for TenExecutor {
         fn execute<'a>(&'a self, _context: &'a CommandContext) -> CommandExecutorResult<'a> {
             Box::pin(async move { Ok(10) })
         }
+    }
+
+    fn test_source_modifier<'a>(
+        context: &'a CommandContext,
+    ) -> crate::command::node::RedirectModifierResult<'a> {
+        Box::pin(async move { Ok(vec![context.source.clone()]) })
     }
 
     // For testing purposes
@@ -649,6 +657,30 @@ mod test {
             chain.execute_all(&source, &EmptyResultConsumer).await,
             Ok(10)
         );
+    }
+
+    #[tokio::test]
+    async fn flattened_chain_preserves_root_redirect_modifier() {
+        let mut dispatcher = CommandDispatcher::new();
+        dispatcher
+            .register(CommandArgumentBuilder::new("foo", "A test command").executes(TenExecutor));
+        dispatcher.register(
+            CommandArgumentBuilder::new("bar", "A modifying redirect").redirect_with_modifier(
+                Redirection::Root,
+                RedirectModifier::Custom(Arc::new(test_source_modifier)),
+            ),
+        );
+
+        let source = Arc::new(CommandSource::dummy());
+        let result = dispatcher.parse_input("bar foo", &source).await;
+        let top_context = result.context.build("bar foo");
+        let chain =
+            ContextChain::try_flatten(&top_context).expect("the redirected command should flatten");
+
+        assert!(matches!(
+            chain.modifiers.first().map(|context| &context.modifier),
+            Some(RedirectModifier::Custom(_))
+        ));
     }
 
     #[tokio::test]
