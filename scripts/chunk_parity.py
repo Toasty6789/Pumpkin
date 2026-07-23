@@ -5,10 +5,11 @@ Usage:
   uv run --with nbtlib --with lz4 scripts/chunk_parity.py VANILLA_WORLD PUMPKIN_WORLD
 
 The world arguments may point either at a world root or directly at a region
-folder. Every chunk present in both inputs is decoded using the modern 26.2
-paletted-container format and compared by base block name, biome, heightmap,
-and structure NBT. Pumpkin's compact Anvil palette stores numeric state IDs,
-so state properties are deliberately excluded from the cross-format block hash.
+folder. Only chunks whose status is `minecraft:full` are compared. Every selected
+chunk is decoded using the modern 26.2 paletted-container format and compared by
+canonical block state (name plus properties), biome, heightmap, and structure NBT.
+Pumpkin's compact Anvil palette stores numeric block-state and biome IDs; those IDs
+are normalized through the generated 26.2 assets before comparison.
 """
 from __future__ import annotations
 
@@ -16,6 +17,7 @@ import argparse
 import gzip
 import hashlib
 import io
+import itertools
 import json
 import math
 import re
@@ -28,14 +30,56 @@ from typing import Any, Iterable
 import nbtlib
 
 
+def canonical_block_state(name: str, properties: dict[str, Any] | None = None) -> str:
+    if not properties:
+        return name
+    serialized = ",".join(
+        f"{key}={str(value).lower()}" for key, value in sorted(properties.items())
+    )
+    return f"{name}[{serialized}]"
+
+
 def load_numeric_palettes() -> tuple[dict[int, str], dict[int, str]]:
     asset_root = Path(__file__).resolve().parents[1] / "assets"
     blocks = json.loads((asset_root / "blocks.json").read_text(encoding="utf-8"))
-    state_names = {
-        int(state["id"]): f"minecraft:{block['name']}"
-        for block in blocks["blocks"]
-        for state in block["states"]
+    property_assets = json.loads(
+        (asset_root / "properties.json").read_text(encoding="utf-8")
+    )
+    properties_by_hash = {
+        int(property_data["hash_key"]): property_data
+        for property_data in property_assets
     }
+    state_names: dict[int, str] = {}
+    for block in blocks["blocks"]:
+        definitions = [properties_by_hash[int(key)] for key in block["properties"]]
+        value_sets: list[list[str]] = []
+        for definition in definitions:
+            property_type = definition["type"]
+            if property_type == "boolean":
+                # Minecraft's BooleanProperty iterates true before false.
+                values = ["true", "false"]
+            elif property_type == "int":
+                values = [
+                    str(value)
+                    for value in range(int(definition["min"]), int(definition["max"]) + 1)
+                ]
+            else:
+                values = [str(value) for value in definition["values"]]
+            value_sets.append(values)
+        combinations = list(itertools.product(*value_sets)) if value_sets else [tuple()]
+        if len(combinations) != len(block["states"]):
+            raise ValueError(
+                f"State/property cardinality mismatch for {block['name']}: "
+                f"{len(block['states'])} states versus {len(combinations)} combinations"
+            )
+        for state, values in zip(block["states"], combinations, strict=True):
+            properties = {
+                definition["serialized_name"]: value
+                for definition, value in zip(definitions, values, strict=True)
+            }
+            state_names[int(state["id"])] = canonical_block_state(
+                f"minecraft:{block['name']}", properties
+            )
     biomes = json.loads((asset_root / "biome.json").read_text(encoding="utf-8"))
     biome_names = {
         int(data["id"]): f"minecraft:{name}" for name, data in biomes.items()
@@ -108,6 +152,36 @@ def normalized(value: Any) -> Any:
     return value
 
 
+def is_full_chunk(root: Any) -> bool:
+    """Return whether a chunk reached the only status valid for block parity."""
+    return str(root.get("Status", "")) == "minecraft:full"
+
+
+def chunk_intersects_circle(chunk_x: int, chunk_z: int, radius_blocks: int) -> bool:
+    """Test a chunk's inclusive block AABB against a circle centered on zero."""
+    if radius_blocks < 0:
+        raise ValueError("radius_blocks must be non-negative")
+    block_min_x, block_max_x = chunk_x * 16, chunk_x * 16 + 15
+    block_min_z, block_max_z = chunk_z * 16, chunk_z * 16 + 15
+    nearest_x = 0 if block_min_x <= 0 <= block_max_x else min(abs(block_min_x), abs(block_max_x))
+    nearest_z = 0 if block_min_z <= 0 <= block_max_z else min(abs(block_min_z), abs(block_max_z))
+    return nearest_x * nearest_x + nearest_z * nearest_z <= radius_blocks * radius_blocks
+
+
+def chunk_circle(radius_blocks: int) -> list[tuple[int, int]]:
+    """Enumerate every chunk whose block AABB intersects the requested circle."""
+    if radius_blocks < 0:
+        raise ValueError("radius_blocks must be non-negative")
+    minimum = math.floor(-radius_blocks / 16) - 1
+    maximum = math.floor(radius_blocks / 16) + 1
+    return [
+        (chunk_x, chunk_z)
+        for chunk_z in range(minimum, maximum + 1)
+        for chunk_x in range(minimum, maximum + 1)
+        if chunk_intersects_circle(chunk_x, chunk_z, radius_blocks)
+    ]
+
+
 def read_region_chunks(path: Path) -> Iterable[tuple[tuple[int, int], Any]]:
     match = REGION_RE.match(path.name)
     if not match:
@@ -151,8 +225,9 @@ def palette_name(entry: Any, numeric_names: dict[int, str]) -> str:
         return data
     if isinstance(data, int):
         return numeric_names.get(data, f"<unknown-id:{data}>")
-    name = data.get("Name", data.get("name", "<unknown>"))
-    return str(name)
+    name = str(data.get("Name", data.get("name", "<unknown>")))
+    properties = data.get("Properties", data.get("properties", {}))
+    return canonical_block_state(name, properties)
 
 
 def unpack_palette_indices(raw_longs: Iterable[int], palette_size: int, count: int, minimum_bits: int) -> list[int]:
@@ -233,17 +308,29 @@ class Report:
     mismatches: list[dict[str, Any]]
 
 
-def load_world(region_dir: Path) -> dict[tuple[int, int], dict[str, Any]]:
+def load_world(
+    region_dir: Path,
+    chunk_mask: set[tuple[int, int]] | None = None,
+) -> dict[tuple[int, int], dict[str, Any]]:
     chunks: dict[tuple[int, int], dict[str, Any]] = {}
     for region in sorted(region_dir.glob("r.*.*.mca")):
         for position, root in read_region_chunks(region):
+            if chunk_mask is not None and position not in chunk_mask:
+                continue
+            if not is_full_chunk(root):
+                continue
             chunks[position] = chunk_fingerprint(root)
     return chunks
 
 
-def compare(vanilla_dir: Path, pumpkin_dir: Path, mismatch_limit: int) -> Report:
-    vanilla = load_world(vanilla_dir)
-    pumpkin = load_world(pumpkin_dir)
+def compare(
+    vanilla_dir: Path,
+    pumpkin_dir: Path,
+    mismatch_limit: int,
+    chunk_mask: set[tuple[int, int]] | None = None,
+) -> Report:
+    vanilla = load_world(vanilla_dir, chunk_mask)
+    pumpkin = load_world(pumpkin_dir, chunk_mask)
     overlap = sorted(vanilla.keys() & pumpkin.keys())
     exact = block_exact = biome_exact = height_exact = structure_exact = 0
     mismatches: list[dict[str, Any]] = []
@@ -286,11 +373,18 @@ def main() -> int:
     parser.add_argument("pumpkin_world", type=Path)
     parser.add_argument("--json", type=Path)
     parser.add_argument("--mismatch-limit", type=int, default=100)
+    parser.add_argument(
+        "--radius-blocks",
+        type=int,
+        help="compare only full chunks intersecting this radius around block (0,0)",
+    )
     args = parser.parse_args()
+    chunk_mask = set(chunk_circle(args.radius_blocks)) if args.radius_blocks is not None else None
     report = compare(
         find_region_dir(args.vanilla_world),
         find_region_dir(args.pumpkin_world),
         args.mismatch_limit,
+        chunk_mask,
     )
     payload = json.dumps(asdict(report), indent=2)
     print(payload)
