@@ -146,19 +146,19 @@ impl WorldInfoWriter for AnvilLevelInfo {
         let start = SystemTime::now();
         let since_the_epoch = start
             .duration_since(UNIX_EPOCH)
-            .expect("Time went backwards");
+            .map_err(|error| WorldInfoError::SerializationError(error.to_string()))?;
         let mut level_data = info.clone();
         level_data.last_played = since_the_epoch.as_millis() as i64;
         let level = LevelDat { data: level_data };
 
         // ── Write level.dat ───────────────────────────────────────────────────
+        std::fs::create_dir_all(level_folder)?;
         let path = level_folder.join(LEVEL_DAT_FILE_NAME);
         let world_info_file = File::create(path)?;
 
         let compression_writer = GzEncoder::new(world_info_file, Compression::best());
-        // TODO: Proper error handling
         pumpkin_nbt::to_bytes(&level, compression_writer)
-            .expect("Failed to write level.dat to disk");
+            .map_err(|error| WorldInfoError::SerializationError(error.to_string()))?;
 
         let data_version = info.data_version;
 
@@ -247,6 +247,19 @@ mod test {
     };
 
     use super::{AnvilLevelInfo, LEVEL_DAT_FILE_NAME, LevelDat, WorldInfoReader, WorldInfoWriter};
+
+    #[test]
+    fn write_world_info_creates_missing_level_directory() {
+        let temp_dir = TempDir::new().expect("temporary root should be created");
+        let level_folder = temp_dir.path().join("new-world");
+        let data = LevelData::default(Seed(8500081009970950196));
+
+        AnvilLevelInfo
+            .write_world_info(&data, &level_folder)
+            .expect("first-start metadata write should create its parent directory");
+
+        assert!(level_folder.join(LEVEL_DAT_FILE_NAME).is_file());
+    }
 
     #[test]
     fn preserve_level_dat_seed() {
