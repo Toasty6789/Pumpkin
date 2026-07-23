@@ -38,6 +38,20 @@ fn needs_relighting(chunk: &crate::chunk::ChunkData, config: LightingEngineConfi
         return false;
     }
 
+    // If the chunk is entirely air (void), lighting is trivially correct:
+    // sky light is at maximum and block light is zero everywhere.
+    // Relighting would wastefully allocate a ProtoChunk for no benefit.
+    if chunk
+        .section
+        .block_sections
+        .read()
+        .expect("RwLock poisoned")
+        .iter()
+        .all(crate::chunk::palette::PalettedContainer::has_only_air)
+    {
+        return false;
+    }
+
     let engine = chunk.light_engine.lock().expect("Mutex poisoned");
 
     // Scan for any complex lighting data
@@ -282,5 +296,78 @@ pub fn generation_work(
         if send.send((pos, result)).is_err() {
             break;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::chunk::format::LightContainer;
+    use crate::chunk::{ChunkData, ChunkLight, ChunkSections};
+    use crate::chunk_system::worker_logic::needs_relighting;
+    use pumpkin_config::lighting::LightingEngineConfig;
+    use pumpkin_data::{block_state::BlockStateId, chunk::ChunkStatus};
+    use std::sync::atomic::AtomicBool;
+
+    fn make_chunk(all_air: bool) -> ChunkData {
+        let count: usize = 24;
+        let block_sections: Vec<_> = (0..count)
+            .map(|_| {
+                let mut pal = crate::chunk::palette::BlockPalette::default();
+                if !all_air {
+                    pal.set(0, 0, 0, BlockStateId::new_or_air(1)); // stone
+                }
+                pal
+            })
+            .collect();
+        ChunkData {
+            section: ChunkSections {
+                count,
+                block_sections: std::sync::RwLock::new(block_sections.into_boxed_slice()),
+                random_tick_sections: std::sync::RwLock::new(None),
+                randomly_ticking_mask: std::sync::atomic::AtomicU32::new(0),
+                biome_sections: std::sync::RwLock::new(
+                    vec![crate::chunk::palette::BiomePalette::default(); count].into_boxed_slice(),
+                ),
+                min_y: -64,
+            },
+            heightmap: std::sync::Mutex::new(crate::chunk::ChunkHeightmaps {
+                world_surface: None,
+                motion_blocking: None,
+                motion_blocking_no_leaves: None,
+            }),
+            light_engine: std::sync::Mutex::new(ChunkLight {
+                sky_light: vec![LightContainer::Empty(15); count].into_boxed_slice(),
+                block_light: vec![LightContainer::Empty(0); count].into_boxed_slice(),
+            }),
+            light_populated: AtomicBool::new(false),
+            x: 0,
+            z: 0,
+            pending_block_entities: std::sync::Mutex::new(std::collections::HashMap::default()),
+            status: ChunkStatus::Full,
+            blending_data: None,
+            dirty: AtomicBool::new(false),
+            fluid_ticks: crate::tick::scheduler::ChunkTickScheduler::default(),
+            block_ticks: crate::tick::scheduler::ChunkTickScheduler::default(),
+        }
+    }
+
+    /// Regression test for #1555: void (all-air) chunks should not trigger relighting.
+    #[test]
+    fn void_chunk_does_not_need_relighting() {
+        let chunk = make_chunk(true);
+        assert!(
+            !needs_relighting(&chunk, LightingEngineConfig::Default),
+            "all-air chunk should not need relighting"
+        );
+    }
+
+    /// Non-air chunks without `light_populated` should still need relighting.
+    #[test]
+    fn non_air_chunk_without_light_populated_needs_relighting() {
+        let chunk = make_chunk(false);
+        assert!(
+            needs_relighting(&chunk, LightingEngineConfig::Default),
+            "non-air chunk without light_populated should need relighting"
+        );
     }
 }
