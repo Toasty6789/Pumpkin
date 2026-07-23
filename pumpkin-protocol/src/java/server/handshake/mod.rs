@@ -28,7 +28,9 @@ impl ServerPacket for SHandShake {
     fn read(mut read: impl Read, _version: &JavaMinecraftVersion) -> Result<Self, ReadingError> {
         Ok(Self {
             protocol_version: read.get_var_int()?,
-            server_address: read.get_str_bounded(255)?,
+            // Use unbounded get_str() to accept proxy-forwarded addresses
+            // (e.g. BungeeCord appends `\0ip\0uuid\0properties` > 255 chars).
+            server_address: read.get_str()?,
             server_port: read.get_u16_be()?,
             next_state: read
                 .get_var_int()?
@@ -49,5 +51,47 @@ impl ClientPacket for SHandShake {
         write.write_u16_be(self.server_port)?;
         write.write_var_int(&VarInt(self.next_state as i32))?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::java::server::handshake::SHandShake;
+    use crate::ser::{NetworkReadExt, NetworkWriteExt};
+    use crate::{ClientPacket, ConnectionState, JavaMinecraftVersion, ServerPacket, VarInt};
+    use std::io::Cursor;
+
+    /// Regression test for #1293: the handshake `server_address` field must accept
+    /// strings longer than 255 characters so that `BungeeCord` proxy forwarding
+    /// data (`host\0ip\0uuid\0properties`) does not cause a decode error.
+    #[test]
+    fn handshake_accepts_long_server_address() {
+        let version = JavaMinecraftVersion::from_protocol(767);
+
+        // Build a handshake packet with a 300-character server_address
+        // (longer than the old 255-byte bound).
+        let long_host = "a".repeat(300);
+        let packet = SHandShake {
+            protocol_version: VarInt(767),
+            server_address: long_host.clone().into_boxed_str(),
+            server_port: 25565,
+            next_state: ConnectionState::Login,
+        };
+
+        // Serialize: prepend VarInt(0x00) packet ID, then write the packet data
+        let mut buf = Vec::new();
+        buf.write_var_int(&VarInt(0)).expect("write packet id");
+        packet
+            .write_packet_data(&mut buf, &version)
+            .expect("write packet");
+
+        let mut cursor = Cursor::new(&buf);
+        // Skip the VarInt packet ID (0x00)
+        cursor.get_var_int().expect("read packet id");
+
+        let decoded = SHandShake::read(&mut cursor, &version).expect("read handshake");
+        assert_eq!(decoded.server_address.as_ref(), long_host.as_str());
+        assert_eq!(decoded.protocol_version.0, 767);
+        assert_eq!(decoded.server_port, 25565);
     }
 }

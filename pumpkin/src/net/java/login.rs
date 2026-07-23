@@ -65,8 +65,9 @@ impl JavaClient {
                 )
                 .await
                 {
-                    Ok((_ip, profile)) => {
-                        // self.address.lock() = ip;
+                    Ok((ip, profile)) => {
+                        *self.address.lock().await =
+                            std::net::SocketAddr::new(ip, self.address.lock().await.port());
                         self.finish_login(&profile).await;
                         *gameprofile = Some(profile);
                     }
