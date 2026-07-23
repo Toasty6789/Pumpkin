@@ -424,6 +424,7 @@ impl PumpkinServer {
         info!("Starting save.");
 
         self.server.shutdown().await;
+        logging::restore_terminal();
 
         info!("Completed save!");
 

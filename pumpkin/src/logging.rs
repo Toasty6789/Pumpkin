@@ -332,6 +332,32 @@ impl ReadlineLogWrapper {
     }
 }
 
+#[cfg(any(unix, test))]
+fn restore_terminal_with(is_tty: bool, restore: impl FnOnce() -> io::Result<()>) -> io::Result<()> {
+    if is_tty { restore() } else { Ok(()) }
+}
+
+/// Restore canonical input and terminal echo even when the readline worker is
+/// still blocked after a server panic.
+#[allow(clippy::missing_const_for_fn)]
+pub fn restore_terminal() {
+    #[cfg(unix)]
+    {
+        use std::io::IsTerminal;
+
+        let result = restore_terminal_with(std::io::stdin().is_terminal(), || {
+            let status = std::process::Command::new("stty").arg("sane").status()?;
+            status
+                .success()
+                .then_some(())
+                .ok_or_else(|| io::Error::other(format!("stty sane exited with status {status}")))
+        });
+        if let Err(error) = result {
+            tracing::warn!("Failed to restore terminal settings after shutdown: {error}");
+        }
+    }
+}
+
 #[derive(Clone, Default)]
 pub struct PumpkinCommandCompleter {
     pub server: Arc<std::sync::RwLock<Option<Arc<Server>>>>,
@@ -566,5 +592,29 @@ impl Completer for PumpkinCommandCompleter {
             let last_space = cmd.rfind(' ').map_or(0, |i| i + 1);
             Ok((last_space + usize::from(has_slash), candidates))
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn terminal_restore_runs_for_a_tty() {
+        let mut called = false;
+
+        super::restore_terminal_with(true, || {
+            called = true;
+            Ok(())
+        })
+        .expect("test terminal restoration should succeed");
+
+        assert!(called);
+    }
+
+    #[test]
+    fn terminal_restore_is_skipped_without_a_tty() {
+        super::restore_terminal_with(false, || -> std::io::Result<()> {
+            panic!("restore command must not run without a TTY")
+        })
+        .expect("non-TTY restoration should be a no-op");
     }
 }
