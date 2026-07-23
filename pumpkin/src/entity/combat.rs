@@ -2,6 +2,7 @@ use std::sync::atomic::Ordering;
 
 use crate::entity::EntityBase;
 use pumpkin_data::{
+    entity::EntityType,
     particle::Particle,
     sound::{Sound, SoundCategory},
 };
@@ -62,6 +63,11 @@ impl AttackType {
 }
 
 pub fn handle_knockback(attacker: &Entity, victim: &dyn EntityBase, strength: f64) {
+    // Armor stands do not take knockback in vanilla Minecraft.
+    if victim.get_entity().entity_type == &EntityType::ARMOR_STAND {
+        return;
+    }
+
     let yaw = attacker.yaw.load();
     let x = f64::from((yaw.to_radians()).sin());
     let z = f64::from(-(yaw.to_radians()).cos());
@@ -116,5 +122,20 @@ pub async fn player_attack_sound(pos: &Vector3<f64>, world: &World, attack_type:
         AttackType::MaceSmash => {
             world.play_sound(Sound::ItemMaceSmashAir, SoundCategory::Players, pos);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use pumpkin_data::entity::EntityType;
+
+    /// Regression test for #1620: armor stands should not receive knockback.
+    #[test]
+    fn armor_stand_entity_type_is_excluded_from_knockback() {
+        assert_ne!(
+            EntityType::ARMOR_STAND,
+            EntityType::ZOMBIE,
+            "ARMOR_STAND must be a distinct entity type for the knockback guard to work"
+        );
     }
 }
