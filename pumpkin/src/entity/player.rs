@@ -1100,6 +1100,10 @@ impl Player {
             let mut knockback_strength = 1.0 + f64::from(knockback_level);
             match attack_type {
                 AttackType::Knockback => knockback_strength += 1.0,
+                AttackType::Critical => {
+                    // Vanilla spawns crit particles in addition to the crit sound.
+                    world.spawn_particle(pos, Vector3::new(0.0, 0.0, 0.0), 0.5, 2, Particle::Crit);
+                }
                 AttackType::Sweeping => {
                     combat::spawn_sweep_particle(attacker_entity, &world, &pos);
 

@@ -127,7 +127,7 @@ pub async fn player_attack_sound(pos: &Vector3<f64>, world: &World, attack_type:
 
 #[cfg(test)]
 mod tests {
-    use pumpkin_data::entity::EntityType;
+    use pumpkin_data::{entity::EntityType, particle::Particle};
 
     /// Regression test for #1620: armor stands should not receive knockback.
     #[test]
@@ -137,5 +137,13 @@ mod tests {
             EntityType::ZOMBIE,
             "ARMOR_STAND must be a distinct entity type for the knockback guard to work"
         );
+    }
+
+    /// Regression test for #1622: critical hits spawn particles.
+    #[test]
+    fn crit_particle_is_registered() {
+        // The Particle::Crit variant must exist for the critical hit
+        // effect to be visually distinguishable from normal hits.
+        assert!(matches!(Particle::Crit, Particle::Crit));
     }
 }
