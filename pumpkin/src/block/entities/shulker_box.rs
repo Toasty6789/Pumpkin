@@ -246,3 +246,53 @@ impl Clearable for ShulkerBoxBlockEntity {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::ShulkerBoxBlockEntity;
+    use crate::block::entities::BlockEntity;
+    use pumpkin_nbt::{compound::NbtCompound, tag::NbtTag};
+    use pumpkin_util::math::position::BlockPos;
+
+    fn make_nbt_items() -> NbtCompound {
+        let items_tag = NbtTag::List(vec![NbtTag::Compound({
+            let mut item = NbtCompound::new();
+            item.put_string("id", "minecraft:dirt".to_string());
+            item.put_int("count", 1);
+            item.put_byte("Slot", 0i8);
+            item
+        })]);
+        let mut block_entity_data = NbtCompound::new();
+        block_entity_data.put("Items", items_tag);
+        block_entity_data
+    }
+
+    #[test]
+    fn items_survive_from_nbt_through_write_nbt() {
+        let pos = BlockPos::new(0, 0, 0);
+        let data = make_nbt_items();
+        let dirt_id = pumpkin_data::item::Item::DIRT.id;
+
+        // Exercise the public entry point that reads BlockEntity data into an
+        // already-constructed ShulkerBoxBlockEntity.
+        let entity = ShulkerBoxBlockEntity::from_nbt(&data, pos);
+        assert_eq!(entity.items.len(), 27, "shulker box has 27 slots");
+
+        let slot0 = entity.items[0].try_lock().expect("slot 0 not poisoned");
+        assert_eq!(slot0.get_item().id, dirt_id);
+        assert_eq!(slot0.item_count, 1);
+        drop(slot0);
+
+        // Write back to NBT and re-read. If write_nbt preserves items for
+        // shulkers (which do NOT use the chest loot-table system), we should
+        // get dirt back when we reconstruct via from_nbt.
+        let mut written = NbtCompound::new();
+        futures::executor::block_on(entity.write_nbt(&mut written));
+
+        // Reconstruct from the written NBT
+        let entity2 = ShulkerBoxBlockEntity::from_nbt(&written, pos);
+        let slot0b = entity2.items[0].try_lock().expect("slot 0 not poisoned");
+        assert_eq!(slot0b.get_item().id, dirt_id);
+        assert_eq!(slot0b.item_count, 1);
+    }
+}
