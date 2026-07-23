@@ -27,23 +27,23 @@ Therefore the requested assertion that this seed contains 60+ Overworld biomes i
 
 ## Structure coverage observed in Vanilla
 
-Overworld starts include:
+Overworld starts observed in the manifest are:
 
-- Ancient city
-- Desert pyramid
-- Igloo
-- Jungle pyramid
-- Mineshaft and mesa mineshaft
-- Ocean monuments and ocean ruins
-- Plains and taiga villages
-- Pillager outpost
-- Ruined portals
-- Shipwrecks
-- Swamp huts
-- Trail ruins
-- Trial chambers
+- Ancient city: 2
+- Buried treasure: 1
+- Desert pyramid: 1
+- Jungle pyramid: 2
+- Mineshaft: 53; mesa mineshaft: 2
+- Ocean ruin: 2 warm; 1 cold
+- Pillager outpost: 3
+- Ruined portal: 6 standard; 1 mountain; 1 desert
+- Shipwreck: 2
+- Trail ruins: 2
+- Trial chambers: 8
+- Village: 3 plains; 1 taiga
+- Woodland mansion: 1
 
-The requested woodland mansion and every village biome variant are not all present as starts in this radius. In the 250-block Nether reference, fortress and bastion pieces intersect the radius through structure references; the nearest fortress start is approximately 284 blocks from origin.
+No igloo, ocean monument, swamp hut, or non-plains/non-taiga village start was observed in the target chunks. The 250-block Nether reference contains one bastion start and references crossing target chunks for fortress (85 chunks), bastion remnants (25), and Nether fossils (2). The nearest independently located fortress start is approximately 284 blocks from origin, outside the 250-block radius.
 
 ## Semantic comparison result
 
