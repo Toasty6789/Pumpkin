@@ -182,6 +182,56 @@ def chunk_circle(radius_blocks: int) -> list[tuple[int, int]]:
     ]
 
 
+def region_location(chunk_x: int, chunk_z: int) -> tuple[int, int, int]:
+    """Return region coordinates and location-table slot for a chunk."""
+    region_x, region_z = chunk_x // 32, chunk_z // 32
+    local_x, local_z = chunk_x % 32, chunk_z % 32
+    return region_x, region_z, local_x + local_z * 32
+
+
+def decode_chunk_payload(payload: bytes, compression: int, path: Path) -> Any:
+    if compression == 1:
+        payload = gzip.decompress(payload)
+    elif compression == 2:
+        payload = zlib.decompress(payload)
+    elif compression == 3:
+        pass
+    elif compression == 4:
+        payload = decompress_lz4_block_stream(payload)
+    else:
+        raise ValueError(f"Unsupported compression {compression} in {path}")
+    return nbtlib.File.parse(io.BytesIO(payload))
+
+
+def read_region_chunk(region_dir: Path, chunk_x: int, chunk_z: int) -> Any | None:
+    """Read one chunk without materializing every chunk in a benchmark world."""
+    region_x, region_z, index = region_location(chunk_x, chunk_z)
+    path = region_dir / f"r.{region_x}.{region_z}.mca"
+    if not path.is_file():
+        return None
+    with path.open("rb") as stream:
+        stream.seek(index * 4)
+        location_raw = stream.read(4)
+        if len(location_raw) != 4:
+            return None
+        location = struct.unpack(">I", location_raw)[0]
+        sector_offset = location >> 8
+        if sector_offset == 0:
+            return None
+        stream.seek(sector_offset * 4096)
+        length_raw = stream.read(4)
+        if len(length_raw) != 4:
+            return None
+        length = struct.unpack(">I", length_raw)[0]
+        compression_raw = stream.read(1)
+        if not compression_raw or length < 1:
+            return None
+        payload = stream.read(length - 1)
+        if len(payload) != length - 1:
+            return None
+        return decode_chunk_payload(payload, compression_raw[0], path)
+
+
 def read_region_chunks(path: Path) -> Iterable[tuple[tuple[int, int], Any]]:
     match = REGION_RE.match(path.name)
     if not match:
@@ -203,17 +253,7 @@ def read_region_chunks(path: Path) -> Iterable[tuple[tuple[int, int], Any]]:
                 length = struct.unpack(">I", length_raw)[0]
                 compression = stream.read(1)[0]
                 payload = stream.read(length - 1)
-                if compression == 1:
-                    payload = gzip.decompress(payload)
-                elif compression == 2:
-                    payload = zlib.decompress(payload)
-                elif compression == 3:
-                    pass
-                elif compression == 4:
-                    payload = decompress_lz4_block_stream(payload)
-                else:
-                    raise ValueError(f"Unsupported compression {compression} in {path}")
-                root = nbtlib.File.parse(io.BytesIO(payload))
+                root = decode_chunk_payload(payload, compression, path)
                 x = int(root.get("xPos", region_x * 32 + local_x))
                 z = int(root.get("zPos", region_z * 32 + local_z))
                 yield (x, z), root
@@ -286,6 +326,57 @@ def chunk_fingerprint(root: Any) -> dict[str, Any]:
     }
 
 
+def compare_chunk_fields(left_root: Any, right_root: Any) -> dict[str, bool]:
+    """Compare one chunk semantically while short-circuiting mismatched sections."""
+    left_sections = {int(section["Y"]): section for section in left_root.get("sections", [])}
+    right_sections = {int(section["Y"]): section for section in right_root.get("sections", [])}
+    section_levels = sorted(left_sections.keys() | right_sections.keys())
+
+    blocks_equal = True
+    for level in section_levels:
+        left_container = left_sections.get(level, {}).get("block_states")
+        right_container = right_sections.get(level, {}).get("block_states")
+        left_blocks = (
+            decode_container(left_container, 4096, 4, STATE_NAMES)
+            if left_container is not None
+            else ("minecraft:air",) * 4096
+        )
+        right_blocks = (
+            decode_container(right_container, 4096, 4, STATE_NAMES)
+            if right_container is not None
+            else ("minecraft:air",) * 4096
+        )
+        if left_blocks != right_blocks:
+            blocks_equal = False
+            break
+
+    biomes_equal = True
+    for level in section_levels:
+        left_container = left_sections.get(level, {}).get("biomes")
+        right_container = right_sections.get(level, {}).get("biomes")
+        if left_container is None or right_container is None:
+            if left_container is right_container:
+                continue
+            biomes_equal = False
+            break
+        if decode_container(left_container, 64, 1, BIOME_NAMES) != decode_container(
+            right_container, 64, 1, BIOME_NAMES
+        ):
+            biomes_equal = False
+            break
+
+    return {
+        "blocks": blocks_equal,
+        "biomes": biomes_equal,
+        "heightmaps": normalized(left_root.get("Heightmaps", {}))
+        == normalized(right_root.get("Heightmaps", {})),
+        "structures": normalized(
+            left_root.get("structures", left_root.get("Structures", {}))
+        )
+        == normalized(right_root.get("structures", right_root.get("Structures", {}))),
+    }
+
+
 def stable_hash(value: Any) -> str:
     encoded = json.dumps(value, sort_keys=True, separators=(",", ":"), default=str).encode()
     return hashlib.sha256(encoded).hexdigest()
@@ -323,12 +414,72 @@ def load_world(
     return chunks
 
 
+def compare_masked_streaming(
+    vanilla_dir: Path,
+    pumpkin_dir: Path,
+    mismatch_limit: int,
+    chunk_mask: set[tuple[int, int]],
+) -> Report:
+    """Compare a large target set one chunk at a time to keep memory bounded."""
+    vanilla_positions: set[tuple[int, int]] = set()
+    pumpkin_positions: set[tuple[int, int]] = set()
+    exact = block_exact = biome_exact = height_exact = structure_exact = 0
+    mismatches: list[dict[str, Any]] = []
+
+    for position in sorted(chunk_mask):
+        left_root = read_region_chunk(vanilla_dir, *position)
+        right_root = read_region_chunk(pumpkin_dir, *position)
+        left_full = left_root is not None and is_full_chunk(left_root)
+        right_full = right_root is not None and is_full_chunk(right_root)
+        if left_full:
+            vanilla_positions.add(position)
+        if right_full:
+            pumpkin_positions.add(position)
+        if not (left_full and right_full):
+            continue
+
+        fields = compare_chunk_fields(left_root, right_root)
+        block_exact += fields["blocks"]
+        biome_exact += fields["biomes"]
+        height_exact += fields["heightmaps"]
+        structure_exact += fields["structures"]
+        if all(fields.values()):
+            exact += 1
+        elif len(mismatches) < mismatch_limit:
+            mismatches.append({"chunk": list(position), "equal": fields})
+
+    overlap = vanilla_positions & pumpkin_positions
+    return Report(
+        vanilla_region=str(vanilla_dir),
+        pumpkin_region=str(pumpkin_dir),
+        vanilla_chunks=len(vanilla_positions),
+        pumpkin_chunks=len(pumpkin_positions),
+        overlapping_chunks=len(overlap),
+        exact_chunks=exact,
+        block_exact_chunks=block_exact,
+        biome_exact_chunks=biome_exact,
+        heightmap_exact_chunks=height_exact,
+        structure_exact_chunks=structure_exact,
+        missing_from_pumpkin=[
+            list(position) for position in sorted(vanilla_positions - pumpkin_positions)
+        ],
+        extra_in_pumpkin=[
+            list(position) for position in sorted(pumpkin_positions - vanilla_positions)
+        ],
+        mismatches=mismatches,
+    )
+
+
 def compare(
     vanilla_dir: Path,
     pumpkin_dir: Path,
     mismatch_limit: int,
     chunk_mask: set[tuple[int, int]] | None = None,
 ) -> Report:
+    if chunk_mask is not None:
+        return compare_masked_streaming(
+            vanilla_dir, pumpkin_dir, mismatch_limit, chunk_mask
+        )
     vanilla = load_world(vanilla_dir, chunk_mask)
     pumpkin = load_world(pumpkin_dir, chunk_mask)
     overlap = sorted(vanilla.keys() & pumpkin.keys())

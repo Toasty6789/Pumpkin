@@ -6,6 +6,16 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import chunk_parity
 
 
+class RegionAddressingTests(unittest.TestCase):
+    def test_region_slot_handles_negative_chunk_coordinates(self):
+        self.assertEqual(chunk_parity.region_location(0, 0), (0, 0, 0))
+        self.assertEqual(chunk_parity.region_location(31, 31), (0, 0, 1023))
+        self.assertEqual(chunk_parity.region_location(32, 0), (1, 0, 0))
+        self.assertEqual(chunk_parity.region_location(-1, -1), (-1, -1, 1023))
+        self.assertEqual(chunk_parity.region_location(-32, -32), (-1, -1, 0))
+        self.assertEqual(chunk_parity.region_location(-33, 0), (-2, 0, 31))
+
+
 class BlockStateNormalizationTests(unittest.TestCase):
     def test_numeric_and_named_palettes_preserve_properties(self):
         named = {"Name": "minecraft:oak_log", "Properties": {"axis": "x"}}
@@ -18,6 +28,31 @@ class BlockStateNormalizationTests(unittest.TestCase):
     def test_boolean_state_order_matches_minecraft_registry(self):
         self.assertEqual(chunk_parity.STATE_NAMES[8], "minecraft:grass_block[snowy=true]")
         self.assertEqual(chunk_parity.STATE_NAMES[9], "minecraft:grass_block[snowy=false]")
+
+
+class StreamingFieldComparisonTests(unittest.TestCase):
+    def test_block_state_properties_participate_in_chunk_equality(self):
+        def root(axis):
+            return {
+                "sections": [
+                    {
+                        "Y": 0,
+                        "block_states": {
+                            "palette": [
+                                {"Name": "minecraft:oak_log", "Properties": {"axis": axis}}
+                            ]
+                        },
+                        "biomes": {"palette": ["minecraft:plains"]},
+                    }
+                ],
+                "Heightmaps": {},
+                "structures": {},
+            }
+
+        self.assertTrue(all(chunk_parity.compare_chunk_fields(root("x"), root("x")).values()))
+        fields = chunk_parity.compare_chunk_fields(root("x"), root("z"))
+        self.assertFalse(fields["blocks"])
+        self.assertTrue(fields["biomes"])
 
 
 class ComparableChunkTests(unittest.TestCase):
