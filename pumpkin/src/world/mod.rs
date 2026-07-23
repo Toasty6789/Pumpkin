@@ -3291,39 +3291,70 @@ impl World {
         };
 
         // Get respawn position and dimension
-        let (position, yaw, pitch, respawn_dimension) =
-            if let Some(respawn) = player.calculate_respawn_point().await {
-                (
-                    respawn.position,
-                    respawn.yaw,
-                    respawn.pitch,
-                    respawn.dimension,
-                )
-            } else {
-                // No valid respawn point - send notification and use world spawn
-                player
-                    .client
-                    .send_packet_now(&CGameEvent::new(GameEvent::NoRespawnBlockAvailable, 0.0))
-                    .await;
+        let (position, yaw, pitch, respawn_dimension) = if let Some(respawn) =
+            player.calculate_respawn_point().await
+        {
+            (
+                respawn.position,
+                respawn.yaw,
+                respawn.pitch,
+                respawn.dimension,
+            )
+        } else {
+            // No valid respawn point - send notification and use world spawn
+            player
+                .client
+                .send_packet_now(&CGameEvent::new(GameEvent::NoRespawnBlockAvailable, 0.0))
+                .await;
 
-                // FIXME: This spawn position calculation is incorrect. Should use vanilla's
-                // proper spawn position calculation (see #1381). The y-level calculation
-                // needs to account for spawn radius and find a safe spawn position.
+            // When the player died in a non-Overworld dimension (e.g. Nether)
+            // without a valid spawn point, redirect to the Overworld world
+            // spawn. Using the death-dimension's heightmap gives Nether roof
+            // coordinates (y=128) which is not the intended fallback behavior.
+            let (target_dimension, top) = if respawn_fallback_dimension(&self.dimension)
+                .minecraft_name
+                == self.dimension.minecraft_name
+            {
                 let chunk_pos = Vector2::new(spawn_x >> 4, spawn_z >> 4);
                 self.level.get_or_fetch_chunk(chunk_pos, |_| ()).await;
                 let top = self.get_top_block(Vector2::new(spawn_x, spawn_z));
-
-                (
-                    Vector3::new(
-                        f64::from(spawn_x) + 0.5,
-                        (top + 1).into(),
-                        f64::from(spawn_z) + 0.5,
-                    ),
-                    spawn_yaw,
-                    spawn_pitch,
-                    self.dimension.clone(),
-                )
+                (self.dimension.clone(), top)
+            } else {
+                let overworld = self.server.upgrade().and_then(|server| {
+                    server
+                        .worlds
+                        .load()
+                        .iter()
+                        .find(|w| w.dimension.minecraft_name == Dimension::OVERWORLD.minecraft_name)
+                        .cloned()
+                });
+                if let Some(overworld) = overworld {
+                    let chunk_pos = Vector2::new(spawn_x >> 4, spawn_z >> 4);
+                    overworld.level.get_or_fetch_chunk(chunk_pos, |_| ()).await;
+                    let ow_top = overworld.get_top_block(Vector2::new(spawn_x, spawn_z));
+                    (Dimension::OVERWORLD, ow_top)
+                } else {
+                    warn!(
+                        "Failed to find Overworld for fallback respawn; staying in current dimension"
+                    );
+                    let chunk_pos = Vector2::new(spawn_x >> 4, spawn_z >> 4);
+                    self.level.get_or_fetch_chunk(chunk_pos, |_| ()).await;
+                    let top = self.get_top_block(Vector2::new(spawn_x, spawn_z));
+                    (self.dimension.clone(), top)
+                }
             };
+
+            (
+                Vector3::new(
+                    f64::from(spawn_x) + 0.5,
+                    (top + 1).into(),
+                    f64::from(spawn_z) + 0.5,
+                ),
+                spawn_yaw,
+                spawn_pitch,
+                target_dimension,
+            )
+        };
 
         // Candidate destination world for a cross-dimension respawn.
         let candidate_world = if respawn_dimension == self.dimension {
@@ -5453,5 +5484,47 @@ impl WorldPortalExt for WorldPortal {
         chunk_z: i32,
     ) {
         natural_spawner::spawn_mobs_for_chunk_generation(&self.0, cache, biome, chunk_x, chunk_z);
+    }
+}
+
+/// Returns the dimension a player without a valid individual spawn point should
+/// respawn in.  When the player died in the Overworld the fallback is the
+/// Overworld; when they died in any other dimension (Nether, End, …) the
+/// fallback MUST be the Overworld world spawn per vanilla semantics.
+fn respawn_fallback_dimension(current: &Dimension) -> Dimension {
+    if current.minecraft_name == Dimension::OVERWORLD.minecraft_name {
+        current.clone()
+    } else {
+        Dimension::OVERWORLD
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::respawn_fallback_dimension;
+    use pumpkin_data::dimension::Dimension;
+
+    #[test]
+    fn nether_death_without_spawnpoint_falls_back_to_overworld() {
+        assert_eq!(
+            respawn_fallback_dimension(&Dimension::THE_NETHER).minecraft_name,
+            Dimension::OVERWORLD.minecraft_name,
+        );
+    }
+
+    #[test]
+    fn overworld_death_falls_back_to_overworld() {
+        assert_eq!(
+            respawn_fallback_dimension(&Dimension::OVERWORLD).minecraft_name,
+            Dimension::OVERWORLD.minecraft_name,
+        );
+    }
+
+    #[test]
+    fn end_death_without_spawnpoint_falls_back_to_overworld() {
+        assert_eq!(
+            respawn_fallback_dimension(&Dimension::THE_END).minecraft_name,
+            Dimension::OVERWORLD.minecraft_name,
+        );
     }
 }
