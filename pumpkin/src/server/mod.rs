@@ -599,7 +599,15 @@ impl Server {
 
         info!("Starting worlds");
         for world in self.worlds.load().iter() {
-            world.shutdown().await;
+            match tokio::time::timeout(std::time::Duration::from_secs(30), world.shutdown()).await {
+                Ok(()) => {}
+                Err(_) => {
+                    error!(
+                        "World {} save timed out (30 s); data may be incomplete",
+                        world.get_world_name(),
+                    );
+                }
+            }
         }
         let level_data = self.level_info.load();
         // then lets save the world info
@@ -1175,5 +1183,24 @@ impl Server {
                 entities.into_iter().take(limit).collect()
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    /// Confirm that `tokio::time::timeout` catches a blocking future. This
+    /// proves the shutdown timeout mechanism works before it is wired into the
+    /// production `Server::shutdown` and `crate::start` paths.
+    #[tokio::test]
+    async fn timeout_catches_blocking_future() {
+        let blocker = tokio::sync::Notify::new();
+        let forever = async {
+            blocker.notified().await; // never fires — runs forever
+        };
+        let result = tokio::time::timeout(std::time::Duration::from_millis(50), forever).await;
+        assert!(
+            result.is_err(),
+            "timeout should cut off a never-ending future"
+        );
     }
 }

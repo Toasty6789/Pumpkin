@@ -423,7 +423,15 @@ impl PumpkinServer {
 
         info!("Starting save.");
 
-        self.server.shutdown().await;
+        match tokio::time::timeout(std::time::Duration::from_mins(1), self.server.shutdown()).await
+        {
+            Ok(()) => {}
+            Err(_) => {
+                error!(
+                    "Server shutdown timed out (60 s); exiting with potentially incomplete saves"
+                );
+            }
+        }
         logging::restore_terminal();
 
         info!("Completed save!");
